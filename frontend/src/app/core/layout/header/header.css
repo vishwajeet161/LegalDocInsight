@@ -1,0 +1,28 @@
+.header {
+    background: white;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 70px;
+}
+
+.logo {
+    font-size: 22px;
+    font-weight: 700;
+}
+
+.logo span {
+    color: #2563eb;
+}
+
+nav a {
+    margin-left: 24px;
+    font-weight: 500;
+}

@@ -1,0 +1,33 @@
+<section class="upload container">
+  <h2>Upload Legal Document</h2>
+  <p class="subtitle">PDF or DOCX only. Max size enforced server-side.</p>
+
+  <div
+    class="drop-zone"
+    [class.dragging]="isDragging()"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave()"
+    (drop)="onDrop($event)"
+  >
+    <input type="file" hidden #fileInput (change)="onFileSelect($event)" />
+
+    @if (!file()) {
+    <div class="placeholder">
+      <p><strong>Drag & drop</strong> your document here</p>
+      <span>or</span>
+      <button type="button" (click)="fileInput.click()">Browse file</button>
+    </div>
+    } @if (file()) {
+    <div class="file-preview">
+      <p>{{ file()?.name }}</p>
+      <button class="remove" (click)="removeFile()">Remove</button>
+    </div>
+    }
+  </div>
+
+  @if (error()) {
+  <p class="error">{{ error() }}</p>
+  }
+
+  <button class="primary-btn" [disabled]="!file()">Analyze Document</button>
+</section>
