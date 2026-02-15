@@ -29,5 +29,5 @@
   <p class="error">{{ error() }}</p>
   }
 
-  <button class="primary-btn" [disabled]="!file()">Analyze Document</button>
+  <button class="primary-btn" [disabled]="!file()" (click)="analyzeDoc($event)">Analyze Document</button>
 </section>
