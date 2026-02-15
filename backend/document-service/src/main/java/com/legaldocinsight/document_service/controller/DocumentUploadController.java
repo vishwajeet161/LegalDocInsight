@@ -25,6 +25,7 @@ public class DocumentUploadController {
 
         file.transferTo(path);
 
-        return ResponseEntity.ok(docId);
+        return ResponseEntity.ok(
+        java.util.Map.of("documentId", docId));
     }
 }
