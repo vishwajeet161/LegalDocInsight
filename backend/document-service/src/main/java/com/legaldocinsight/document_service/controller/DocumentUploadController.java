@@ -13,7 +13,10 @@ import java.util.UUID;
 @RequestMapping("/documents")
 public class DocumentUploadController {
 
-    private static final String UPLOAD_DIR = "/tmp/legaldocinsight";
+    private static final String UPLOAD_DIR =
+        System.getProperty("user.home") +
+        "/Desktop/LegalDocInsight/storage/documents";
+
 
     @PostMapping("/upload")
     public ResponseEntity<?> upload(@RequestParam("file") MultipartFile file) throws Exception {
