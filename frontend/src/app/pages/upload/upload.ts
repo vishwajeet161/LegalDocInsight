@@ -8,6 +8,7 @@ import { AnalysisService } from '../../services/analysis';
   styleUrl: './upload.css',
 })
 export class Upload {
+  docId: any;
   file = signal<File | null>(null);
   isDragging = signal(false);
   error = signal<string | null>(null);
@@ -62,10 +63,11 @@ export class Upload {
   analyzeDoc(event: any){
     console.log(event);
     let file = this.file();
-    // console.log(file);
     this.analysisService.analyzeFile(file).subscribe(
       (response) => {
-        console.log('Analysis result:', response);
+        console.log('Uploaded Document ID:', response);
+        this.docId = response.documentId;
+
         // Handle the response as needed
       },
       (error) => {
@@ -73,5 +75,7 @@ export class Upload {
         // Handle the error as needed
       }
     );
+
+    
   }
 }
