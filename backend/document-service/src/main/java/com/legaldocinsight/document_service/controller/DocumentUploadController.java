@@ -4,6 +4,7 @@ import com.legaldocinsight.document_service.service.DocumentTextExtractor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import com.legaldocinsight.document_service.client.AnalysisServiceClient;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,8 +19,11 @@ public class DocumentUploadController {
 
     private final DocumentTextExtractor extractor;
 
-    public DocumentUploadController(DocumentTextExtractor extractor) {
+    private final AnalysisServiceClient analysisClient;
+
+    public DocumentUploadController(DocumentTextExtractor extractor, AnalysisServiceClient analysisClient) {
         this.extractor = extractor;
+        this.analysisClient = analysisClient;
     }
 
     @PostMapping("/upload")
@@ -39,6 +43,8 @@ public class DocumentUploadController {
 
         System.out.println("===== EXTRACTED TEXT =====");
         System.out.println(extractedText);
+        
+        analysisClient.sendForAnalysis(docId, extractedText);
 
         return ResponseEntity.ok(
                 Map.of(
