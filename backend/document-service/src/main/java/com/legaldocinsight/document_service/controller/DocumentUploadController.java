@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/documents")
+@RequestMapping("/api/documents")
 public class DocumentUploadController {
 
     private static final String UPLOAD_DIR = "/tmp/legaldocinsight";

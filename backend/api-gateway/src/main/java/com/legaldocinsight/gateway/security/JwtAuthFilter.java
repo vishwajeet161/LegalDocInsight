@@ -29,15 +29,15 @@ public class JwtAuthFilter implements GlobalFilter {
                 .getFirst("Authorization")
                 .replace("Bearer ", "");
 
-        try {
-            Claims claims = Jwts.parser()
-                    .setSigningKey(secret.getBytes())
-                    .parseClaimsJws(token)
-                    .getBody();
-        } catch (Exception e) {
-            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-            return exchange.getResponse().setComplete();
-        }
+        // try {
+        //     Claims claims = Jwts.parser()
+        //             .setSigningKey(secret.getBytes())
+        //             // .parseClaimsJws(token)
+        //             // .getBody();
+        // } catch (Exception e) {
+        //     exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+        //     return exchange.getResponse().setComplete();
+        // }
 
         return chain.filter(exchange);
     }
