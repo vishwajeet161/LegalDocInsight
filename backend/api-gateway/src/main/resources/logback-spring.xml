@@ -1,0 +1,33 @@
+<configuration>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId:-NO_CORR}] [%X{userId:-anonymous}] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/api-gateway.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/api-gateway.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId:-NO_CORR}] [%X{userId:-anonymous}] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Gateway internals — keep at INFO to avoid noise -->
+    <logger name="org.springframework.cloud.gateway" level="INFO"/>
+    <logger name="reactor.netty" level="WARN"/>
+
+    <!-- Your code — DEBUG in dev -->
+    <logger name="com.legaldocinsight.gateway" level="DEBUG"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+
+</configuration>
