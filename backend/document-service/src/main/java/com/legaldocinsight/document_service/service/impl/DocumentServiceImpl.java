@@ -21,6 +21,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -78,7 +81,14 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         // 3. Trigger async extraction — returns immediately, runs in background
-        extractionOrchestrator.extractAsync(documentId);
+        TransactionSynchronizationManager.registerSynchronization(
+            new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    extractionOrchestrator.extractAsync(documentId);
+                }
+            }
+        );
 
         return DocumentUploadResponse.builder()
             .documentId(documentId)

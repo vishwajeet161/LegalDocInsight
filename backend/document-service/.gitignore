@@ -35,3 +35,4 @@ build/
 **/application.yml
 **/uploads
 **/logs
+/**/ca.pem
