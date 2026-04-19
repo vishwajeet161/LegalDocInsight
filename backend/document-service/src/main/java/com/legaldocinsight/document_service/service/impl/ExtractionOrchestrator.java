@@ -4,11 +4,14 @@ import com.legaldocinsight.document_service.entity.Document;
 import com.legaldocinsight.document_service.entity.Document.DocumentStatus;
 import com.legaldocinsight.document_service.repository.DocumentRepository;
 import com.legaldocinsight.document_service.service.StorageService;
+import com.legaldocinsight.document_service.messaging.DocumentEventPublisher;
+import com.legaldocinsight.document_service.messaging.event.DocumentExtractedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.time.LocalDateTime;
 
 import java.io.InputStream;
 
@@ -26,6 +29,8 @@ public class ExtractionOrchestrator {
     private final DocumentRepository documentRepository;
     private final StorageService storageService;
     private final TikaExtractionService tikaExtractionService;
+    private final DocumentEventPublisher eventPublisher;
+    // private final DocumentExtractedEvent documentExtractedEvent;
 
     @Async("extractionExecutor")
     @Transactional
@@ -68,5 +73,26 @@ public class ExtractionOrchestrator {
         documentRepository.save(document);
         log.info("Document status updated: documentId={} status={}",
             documentId, document.getStatus());
+
+
+        extractAndPublish(document);
+    }
+
+
+    public void extractAndPublish(Document document) {
+
+        // 1. Publish event — analysis service picks this up
+        DocumentExtractedEvent event = new DocumentExtractedEvent(
+            document.getId(),
+            document.getUploadedBy(),
+            document.getOriginalFileName(),
+            document.getFilePath(),
+            document.getFileType(),
+            document.getExtractedText(),   // already saved to entity by Tika service
+            document.getPageCount(),
+            document.getCharacterCount(),
+            LocalDateTime.now()
+        );
+        eventPublisher.publishDocumentExtracted(event);
     }
 }
