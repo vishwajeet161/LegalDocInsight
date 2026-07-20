@@ -1,0 +1,99 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:4200"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders: "*"
+            allowCredentials: true
+
+      routes:
+
+        # Document Service
+        - id: document-service
+          uri: ${DOCUMENT_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/documents/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: documentServiceCB
+                fallbackUri: forward:/fallback/document
+          metadata:
+            requiresAuth: false
+
+        # Analysis Service
+        - id: analysis-service
+          uri: ${ANALYSIS_SERVICE_URL:http://localhost:8082}
+          predicates:
+            - Path=/api/analysis/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: analysisServiceCB
+                fallbackUri: forward:/fallback/analysis
+          metadata:
+            requiresAuth: false
+
+        # Chat Service
+        - id: chat-service
+          uri: ${CHAT_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/chat/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: chatServiceCB
+                fallbackUri: forward:/fallback/chat
+
+        # Authentication
+        - id: auth-public
+          uri: ${DOCUMENT_SERVICE_URL:http://localhost:8081}
+          predicates:
+            - Path=/api/auth/**
+
+jwt:
+  secret: ${JWT_SECRET:local-dev-secret-change-me}
+  expiration: ${JWT_EXPIRATION:86400000}
+
+public-endpoints:
+  - /api/analysis/**
+  - /api/documents/**
+  - /api/auth/login
+  - /api/auth/register
+  - /actuator/health
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,circuitbreakers,circuitbreakerevents
+  endpoint:
+    health:
+      circuitbreakers:
+        enabled: true
+      show-details: always
+
+logging:
+  level:
+    com.legaldocinsight.gateway: DEBUG
+    org.springframework.cloud.gateway: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId}] [%X{userId}] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId}] [%X{userId}] %logger{36} - %msg%n"
+  file:
+    name: logs/api-gateway.log
