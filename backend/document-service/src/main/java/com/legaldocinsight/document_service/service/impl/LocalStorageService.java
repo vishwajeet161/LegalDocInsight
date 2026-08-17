@@ -30,7 +30,7 @@ public class LocalStorageService implements StorageService {
     
     @Override
     public InputStream download(String objectKey){
-
+        return null;
     };
 
     @Override
@@ -39,7 +39,7 @@ public class LocalStorageService implements StorageService {
         InputStream content,
         String contentType
     ){
-        
+
     };
 
     @PostConstruct
