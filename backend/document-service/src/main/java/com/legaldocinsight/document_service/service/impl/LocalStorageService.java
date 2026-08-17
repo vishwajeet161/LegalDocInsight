@@ -18,6 +18,30 @@ public class LocalStorageService implements StorageService {
     @Value("${storage.local.upload-dir}")
     private String uploadDir;
 
+    @Override
+    public String generateUploadUrl(String objectKey, String contentType){
+        return "";
+    }
+
+    @Override
+    public boolean exists(String objectKey){
+        return false;
+    };
+    
+    @Override
+    public InputStream download(String objectKey){
+
+    };
+
+    @Override
+    public void upload(
+        String objectKey,
+        InputStream content,
+        String contentType
+    ){
+        
+    };
+
     @PostConstruct
     public void init() throws IOException {
         Path uploadPath = Paths.get(uploadDir);

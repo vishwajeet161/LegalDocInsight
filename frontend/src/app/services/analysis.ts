@@ -6,7 +6,7 @@ import { Observable } from 'rxjs';
   providedIn: 'root'
 })
 export class AnalysisService {
-  private apiUrl = 'http://localhost:8080/api/documents/upload'; // replace with your endpoint
+  private apiUrl = 'http://98.80.201.80:8080/api/documents/upload'; // replace with your endpoint
 
   constructor(private http: HttpClient) {}
 
