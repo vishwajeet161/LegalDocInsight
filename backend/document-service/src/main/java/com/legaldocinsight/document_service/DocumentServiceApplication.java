@@ -7,6 +7,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
 
 @SpringBootApplication
 @EnableAsync
+@EnableConfigurationProperties(S3Properties.class)
 public class DocumentServiceApplication {
 
 	public static void main(String[] args) {

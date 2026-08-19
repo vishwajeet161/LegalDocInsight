@@ -33,6 +33,8 @@ build/
 .vscode/
 **/application.properties
 **/application.yml
+**/application-local.yml
+**/application-prod.yml
 **/uploads
 **/logs
 /**/ca.pem

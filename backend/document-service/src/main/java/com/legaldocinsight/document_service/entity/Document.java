@@ -34,13 +34,8 @@ public class Document {
     private String fileType;
 
     @Column(columnDefinition = "TEXT")
-    private String extractedText;
+    private String extractedTextFilePath;
 
-    @Column
-    private Integer pageCount;
-
-    @Column
-    private Integer characterCount;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
