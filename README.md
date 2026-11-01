@@ -1,779 +1,110 @@
+# LegalDocInsight
 
-# ⚖️ Legal Document Analyzer
+LegalDocInsight is a work-in-progress application for analyzing legal documents. The first release targets a simple workflow: upload a text-based Indian commercial contract and receive an LLM-assisted report with references to the document and, where applicable, Indian law.
 
-A highly scalable, AI-powered, enterprise-grade Legal Document Analyzer platform designed for:
+## Project status
 
-- Contract Intelligence
-- Compliance Analysis
-- Clause Extraction
-- Legal Risk Detection
-- Semantic Legal Search
-- Grounded Legal Chat using Indian Law
+**The first release is planned, not yet implemented end to end.** The repository currently contains an Angular landing and upload interface, an API gateway, document upload and extraction code, and an analysis-service stub. The document service has build and configuration issues identified in the discovery review; there is no completed analysis report or chat workflow.
 
----
+The intended first-release protections, including anonymous access tokens, rate limiting, malware scanning and isolated parsing, are also planned. Do not deploy the current implementation as a public document-upload service.
 
-# 🚀 Features
+For the code-level findings, see [Current architecture](docs/CURRENT_ARCHITECTURE.md) and [Architecture gap analysis](docs/ARCHITECTURE_GAP_ANALYSIS.md).
 
-## Core Capabilities
+## First-release goal
 
-- Upload legal documents (PDF/DOCX/Scanned Contracts)
-- AI-powered contract analysis
-- Clause extraction
-- Compliance validation
-- Legal entity extraction
-- Risk scoring
-- Semantic search
-- Legal Q&A chat using uploaded document + Indian law
-- Deterministic AI outputs
+A visitor can:
 
----
+1. Upload a text-based PDF or DOCX contract without creating an account.
+2. Follow the document's processing status.
+3. Read a temporary report containing a summary, key clauses, obligations, potential risks and supporting document passages.
+4. See optional Indian-law observations with references to a curated legal source when the source supports the finding.
 
-# 🎯 Functional Requirements
+The planned report should identify uncertainty when evidence is insufficient. LLM output and legal applicability need evaluation; the project does not guarantee identical results or legally correct conclusions.
 
-## Document Processing
-
-- Upload legal documents
-- Support versioned documents
-- Re-analysis support
-- OCR support for scanned contracts
-
-## AI Analysis
-
-Extract:
-
-- Clauses
-- Obligations
-- Legal entities
-- Compliance status
-- Risk scores
-
-Generate:
-
-- Summaries
-- Key points
-- Compliance gaps
-- Legal recommendations
-
-## AI Chat
-
-Users can:
-
-- Ask questions about uploaded contracts
-- Ask legal questions grounded in Indian law
-- Retrieve contextual legal answers
-
----
-
-# ⚡ Non-Functional Requirements
-
-## Performance
-
-- Cached response latency < 3 sec
-- Fresh document analysis < 15 sec
-- Chat response latency < 2 sec
-
-## Scalability
-
-- 100K+ concurrent users
-- Millions of documents
-- Horizontally scalable architecture
-
-## Consistency
-
-System prioritizes:
-
-- Consistency over Availability (CP)
-
-Reason:
-
-- Legal systems require deterministic outputs
-- Same document must always return same:
-  - Clauses
-  - Risks
-  - Compliance status
-  - Extracted entities
-
----
-
-# 🧠 Core Architectural Principle
-
-## Deterministic AI
-
-For same:
-
-- Document
-- Prompt
-- Model version
-
-System must generate identical output.
-
----
-
-# 🏗️ High-Level Architecture
+## Planned first-release architecture
 
 ```text
-                    ┌──────────────────┐
-                    │   Client Apps    │
-                    └────────┬─────────┘
-                             │
-                    ┌────────▼─────────┐
-                    │    API Gateway   │
-                    │ Auth / RateLimit │
-                    └────────┬─────────┘
-                             │
-        ┌────────────────────┼────────────────────┐
-        │                    │                    │
-        ▼                    ▼                    ▼
-┌──────────────┐   ┌────────────────┐   ┌────────────────┐
-│ Document Svc │   │   Chat Service │   │  User Service  │
-└──────┬───────┘   └──────┬─────────┘   └────────────────┘
-       │                  │
-       ▼                  ▼
-┌──────────────┐   ┌────────────────┐
-│ Object Store │   │ Conversation DB│
-│  (S3/MinIO)  │   └────────────────┘
-└──────┬───────┘
-       │
-       ▼
-┌────────────────────────────────────┐
-│      Event Streaming Platform      │
-│        Kafka / Pulsar              │
-└──────────────┬─────────────────────┘
-               │
-     ┌─────────┼─────────┐
-     ▼         ▼         ▼
-┌────────┐ ┌────────┐ ┌──────────────┐
-│ OCR Svc│ │Parser  │ │ Metadata Svc │
-└────┬───┘ └────┬───┘ └──────┬───────┘
-     │           │            │
-     └───────────┼────────────┘
-                 ▼
-        ┌─────────────────┐
-        │ Analysis Engine │
-        └────────┬────────┘
-                 │
-      ┌──────────┼─────────────┐
-      ▼          ▼             ▼
-┌──────────┐ ┌──────────┐ ┌────────────┐
-│Vector DB │ │Postgres  │ │Redis Cache │
-└──────────┘ └──────────┘ └────────────┘
-                 │
-                 ▼
-        ┌─────────────────┐
-        │ Report Generator│
-        └─────────────────┘
-````
+Angular frontend
+    |
+    v
+API gateway -- per-IP and global upload limits
+    |
+    v
+Document service -- validate, scan, store, extract, track status
+    |                         |
+    |                         +--> PostgreSQL + persistent file storage
+    v
+Analysis service -- LLM analysis and report persistence
+    |                         |
+    +--> Open-weight model    +--> PostgreSQL
+    |
+    +--> Curated Indian-law sources
 
----
+Frontend polls document-service for status and the report.
+```
 
-# 🔐 API Gateway
+The gateway, document service and analysis service remain separate Spring Boot applications for the first release. The planned handoff from document service to analysis service uses internal HTTP. One PostgreSQL instance and a persistent local file volume support the initial single-host deployment. A local malware scanner and a model runtime are also planned.
 
-Responsibilities:
+Ollama serving Qwen3:8b is an initial model candidate; its hardware requirements and report quality must be measured before selection. The model endpoint and name are intended to be configurable.
 
-* Authentication
-* JWT validation
-* Rate limiting
-* Request tracing
-* Multi-tenant isolation
-* Request deduplication
+## Planned privacy and upload controls
 
-Recommended:
+- Each upload receives a separate, unguessable access token. Status, report and deletion requests require that token; a document ID alone does not grant access.
+- Documents, extracted text and reports are temporary. The proposed retention period is configurable, with seven days as the initial default to review.
+- The gateway applies per-IP and global upload limits. The services also bound queue size and concurrent processing.
+- Uploads are checked for supported type and size, scanned before parsing in the public deployment profile, and parsed with isolation and resource limits.
+- Internal services and storage remain private. Secrets, access tokens and document contents must not appear in logs.
 
-* Kong
-* Envoy
-* NGINX
+These controls are part of the release plan and have not yet been verified in the current application. The single-instance in-memory rate limiter proposed for the first deployment would need reconsideration if the gateway is scaled to multiple instances.
 
----
+## Feature roadmap
 
-# 📄 Document Service
+| Order | Feature | Status |
+| --- | --- | --- |
+| 1 | Buildable baseline, anonymous upload and access control | Planned |
+| 2 | Document validation, scanning, extraction and status | Planned |
+| 3 | Analysis API and report persistence | Planned |
+| 4 | LLM analysis and reliable service handoff | Planned |
+| 5 | Curated Indian-law sources and report evaluation | Planned |
+| 6 | Angular status and report experience | Planned |
+| 7 | Repeatable deployment and release checks | Planned |
 
-## Responsibilities
+Each feature has planned tests and acceptance checks in the [first-release implementation plan](docs/superpowers/plans/2026-11-01-first-release.md). The [first-release scope](docs/FIRST_RELEASE_SCOPE.md) records the proposed behavior and decisions still to validate.
 
-* File upload handling
-* Metadata management
-* Document versioning
-* Checksum generation
-
-## Document Hashing
+## Repository layout
 
 ```text
-SHA256(document_content)
+frontend/                    Angular application
+backend/pom.xml              Maven aggregator
+backend/api-gateway/         Spring Cloud Gateway application
+backend/document-service/    Document upload, storage and extraction application
+backend/analysis-service/    Analysis application; currently a stub
+docs/                        Architecture discovery, HLD and release plan
+AGENTS.md                    Repository guidance for coding agents
 ```
 
-If hash already exists:
+The Maven modules are independent Spring Boot applications. The aggregator lists them; it is not itself a runnable backend.
 
-* Skip re-analysis
-* Return cached report
+## Development and tests
 
-Benefits:
+The first task is to establish a buildable baseline and document a repeatable local setup. The following are existing project entry points, not a verified full-stack setup:
 
-* Deterministic outputs
-* Lower AI cost
-* Faster response
+- Frontend scripts are listed in [`frontend/package.json`](frontend/package.json), including `npm start`, `npm test` and `npm run build`.
+- Each backend application has its own Maven wrapper. From an individual service directory, `./mvnw test` is the test command to use when the local Java and Maven setup is ready.
+- Existing `application-example.properties` files are examples and are not automatically active Spring configuration. Complete runtime configuration and deployment instructions are part of the planned work.
 
----
+## Later possibilities
 
-# ☁️ Storage Layer
+User accounts and saved history, chat, scanned-document OCR, broader legal sources, Kafka, S3 and vector search can be evaluated after the first workflow is working. Their inclusion will depend on product and deployment needs.
 
-## Object Storage
+## Documentation
 
-Recommended:
+- [First-release scope](docs/FIRST_RELEASE_SCOPE.md)
+- [Feature-by-feature implementation and testing plan](docs/superpowers/plans/2026-11-01-first-release.md)
+- [Current architecture](docs/CURRENT_ARCHITECTURE.md)
+- [Architecture gap analysis](docs/ARCHITECTURE_GAP_ANALYSIS.md)
+- [Existing HLD diagram](docs/NEW_LegalDoc_HLD.png)
 
-* Amazon S3
-* MinIO
+## License
 
-Store:
-
-* Raw documents
-* OCR outputs
-* Embeddings
-* Generated reports
-
----
-
-# 📡 Event-Driven Architecture
-
-## Messaging Platform
-
-* Apache Kafka
-* Apache Pulsar
-
-## Topics
-
-```text
-document-uploaded
-ocr-completed
-analysis-started
-analysis-completed
-embedding-generated
-report-generated
-```
-
-Benefits:
-
-* Asynchronous scalability
-* Retries
-* Fault tolerance
-* Backpressure handling
-* Loose coupling
-
----
-
-# 🔍 OCR + Parsing Layer
-
-Supports:
-
-* Scanned PDFs
-* Image contracts
-* Signatures
-
-Recommended:
-
-* Tesseract OCR
-* Apache Tika
-
-Pipeline:
-
-```text
-PDF
- ↓
-OCR
- ↓
-Text Extraction
- ↓
-Structure Detection
- ↓
-Semantic Chunking
-```
-
----
-
-# 🧠 Analysis Engine
-
-Core AI processing layer.
-
-## Workers
-
-```text
-Clause Extraction Worker
-NER Worker
-Compliance Worker
-Risk Scoring Worker
-Summarization Worker
-Embedding Worker
-```
-
----
-
-# 🧩 Semantic Chunking
-
-Instead of:
-
-* Fixed-size chunks
-
-Use:
-
-* Clause-based chunking
-* Heading-based chunking
-* Semantic boundaries
-
-Example:
-
-* Termination Clause
-* Liability Clause
-* Confidentiality Clause
-
----
-
-# 📊 Embedding Pipeline
-
-```text
-Chunk
-  ↓
-Embedding Model
-  ↓
-Vector
-  ↓
-Vector Database
-```
-
-Example:
-
-```text
-"The employee shall not disclose confidential information..."
-```
-
-↓
-
-```text
-[0.231, -0.882, 0.553 ...]
-```
-
-Stored in:
-
-* Qdrant
-* Pinecone
-
----
-
-# ⚖️ Legal Analysis Pipeline
-
-## Hybrid Analysis Approach
-
-### Rule-Based Analysis
-
-Detect:
-
-* Dates
-* GST numbers
-* PAN
-* Mandatory clauses
-* Signatures
-
-### LLM-Based Analysis
-
-Detect:
-
-* Legal risks
-* Unfair terms
-* Ambiguity
-* Compliance issues
-
----
-
-# 🤖 Deterministic AI Strategy
-
-Use:
-
-```text
-temperature = 0
-top_p = 0
-fixed prompts
-fixed model versions
-schema-constrained output
-```
-
-Store:
-
-```text
-document_hash
-model_version
-prompt_version
-analysis_version
-```
-
-Guarantee:
-
-```text
-same_document + same_prompt + same_model
-=> same_output
-```
-
----
-
-# ⚡ Caching Strategy
-
-## Multi-Level Cache
-
-```text
-L1 -> In-Memory Cache
-L2 -> Redis
-L3 -> PostgreSQL
-```
-
-Benefits:
-
-* Lower latency
-* High throughput
-* Reduced recomputation
-
----
-
-# 🗄️ Database Design
-
-## PostgreSQL
-
-Store:
-
-* Metadata
-* Clauses
-* Reports
-* Risks
-* Audit logs
-* Compliance results
-
-Reason:
-
-* ACID guarantees
-* Strong consistency
-* Enterprise reliability
-
----
-
-# 🔎 Vector Database
-
-Use:
-
-* Qdrant
-* Pinecone
-
-Store:
-
-* Chunk embeddings
-* Semantic search vectors
-* Legal knowledge embeddings
-
----
-
-# 💬 Chat Service Architecture
-
-Uses:
-
-* Hybrid RAG (Retrieval-Augmented Generation)
-
----
-
-# 🔄 Chat Flow
-
-```text
-User Query
-   ↓
-Retriever
-   ↓
-Document Vector Search
-   ↓
-Indian Law Retrieval
-   ↓
-Context Builder
-   ↓
-LLM
-   ↓
-Grounded Legal Answer
-```
-
----
-
-# 📚 Legal Knowledge Base
-
-Store:
-
-* Indian Contract Act
-* IT Act
-* DPDP Act
-* GST rules
-* Employment law
-* Case laws
-* Compliance frameworks
-
-Enables:
-
-* Grounded legal responses
-* Law-aware AI chat
-* Contextual legal reasoning
-
----
-
-# 🧠 Recommended Chat Components
-
-```text
-Chat Service
-   ├── Conversation Manager
-   ├── Retrieval Engine
-   ├── Legal Knowledge Retriever
-   ├── Context Builder
-   ├── Prompt Orchestrator
-   └── LLM Gateway
-```
-
----
-
-# 🚪 LLM Gateway
-
-Do NOT allow services to directly access LLMs.
-
-Create:
-
-* Centralized LLM Gateway
-
-Responsibilities:
-
-* Model routing
-* Retries
-* Prompt management
-* Cost tracking
-* Schema validation
-* Observability
-
----
-
-# ⚡ Response Time Optimization
-
-## Precompute Everything
-
-Immediately after upload:
-
-* Embeddings
-* Summaries
-* Clause maps
-* Risk scores
-
-Store results for fast retrieval.
-
----
-
-# 🔄 Async Processing
-
-Upload Response:
-
-```json
-{
-  "documentId": "123",
-  "status": "PROCESSING"
-}
-```
-
-Frontend:
-
-* Polling
-* WebSockets
-* Streaming updates
-
----
-
-# ☸️ Kubernetes Deployment
-
-Use Kubernetes for:
-
-* Autoscaling
-* Rolling deployments
-* Self-healing
-* Fault tolerance
-
-Scale using:
-
-* Kafka lag
-* CPU
-* Queue depth
-* GPU utilization
-
----
-
-# 🔒 Security Architecture
-
-## Encryption
-
-* TLS in transit
-* AES-256 at rest
-
-## RBAC
-
-Roles:
-
-* Lawyer
-* Admin
-* Client
-
-## Audit Logs
-
-Track:
-
-* Uploads
-* Report generation
-* Prompt usage
-* Document access
-
----
-
-# 📈 Observability
-
-Use:
-
-* Prometheus
-* Grafana
-* OpenTelemetry
-
-Track:
-
-* p95 latency
-* Cache hit ratio
-* Kafka lag
-* Token usage
-* AI failures
-
----
-
-# 🗂️ Suggested Database Schema
-
-## Document Table
-
-```text
-document_id
-user_id
-document_hash
-storage_url
-status
-uploaded_at
-analysis_version
-```
-
-## Analysis Table
-
-```text
-analysis_id
-document_id
-summary
-risk_score
-compliance_status
-model_version
-prompt_version
-created_at
-```
-
-## Clause Table
-
-```text
-clause_id
-document_id
-clause_type
-clause_text
-risk_level
-embedding_id
-```
-
----
-
-# 🔄 Workflow Orchestration
-
-Instead of:
-
-```text
-Document Service -> Analysis Service
-```
-
-Use:
-
-* Temporal
-* Apache Airflow
-
-Benefits:
-
-* Retries
-* Recovery
-* Deterministic workflows
-* Long-running orchestration
-
----
-
-# 🛠️ Recommended Production Stack
-
-| Layer              | Technology           |
-| ------------------ | -------------------- |
-| API Gateway        | Kong / Envoy         |
-| Backend            | Spring Boot          |
-| Messaging          | Kafka                |
-| Database           | PostgreSQL           |
-| Cache              | Redis                |
-| Object Storage     | S3                   |
-| Vector DB          | Qdrant               |
-| Workflow Engine    | Temporal             |
-| Container Platform | Kubernetes           |
-| Monitoring         | Prometheus + Grafana |
-| OCR                | Tesseract + Tika     |
-| LLM                | GPT / Claude / Llama |
-| Search             | Elasticsearch        |
-
----
-
-# 🎯 Key Architectural Principles
-
-## 1. Deterministic AI
-
-Critical for legal correctness.
-
-## 2. Event-Driven Architecture
-
-Required for scale.
-
-## 3. Precompute Everything
-
-Required for low latency.
-
-## 4. Retrieval-Augmented Generation
-
-Required for grounded legal responses.
-
-## 5. Strong Consistency
-
-Correct CAP choice for legal systems.
-
----
-
-# 🚀 Future Enhancements
-
-1. Multi-tenant isolation
-2. Distributed vector search
-3. GPU inference optimization
-4. Fine-tuned legal LLMs
-5. Legal citation engine
-6. AI explainability layer
-7. Document lineage tracking
-8. Real-time collaborative analysis
-9. Compliance automation workflows
-10. Advanced legal analytics dashboards
-
----
-
-# 👨‍💻 Author
-
-Designed and architected by **Vishwajeet Patel**.
-
-Focused on:
-
-* Scalable distributed systems
-* AI-powered legal intelligence
-* Enterprise-grade backend architecture
-* Deterministic AI systems
-* Production-ready RAG pipelines
-
-```
-```
+See [LICENSE](LICENSE).
