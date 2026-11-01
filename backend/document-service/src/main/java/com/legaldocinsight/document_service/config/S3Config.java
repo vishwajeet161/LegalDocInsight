@@ -2,11 +2,13 @@ package com.legaldocinsight.document_service.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 @Configuration
+@ConditionalOnProperty(prefix = "aws.s3", name = "enabled", havingValue = "true")
 public class S3Config {
 
     private final S3Properties s3Properties;

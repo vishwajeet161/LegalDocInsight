@@ -6,13 +6,11 @@ import { Observable } from 'rxjs';
   providedIn: 'root'
 })
 export class AnalysisService {
-  private apiUrl = 'http://98.80.201.80:8080/api/documents/upload'; // replace with your endpoint
-
+  private apiUrl = 'http://localhost:8080/api/documents/upload'; // replace with your endpoint
   constructor(private http: HttpClient) {}
 
   analyzeFile(file: any): Observable<any> {
     const formData = new FormData();
-    console.log(file);
     formData.append('file', file, file.name); // key must match backend
     return this.http.post<any>(this.apiUrl, formData);
   }

@@ -1,7 +1,14 @@
 package com.legaldocinsight.document_service.service.impl;
 
-@Service
-public class S3StorageService implements StorageService {
+import com.legaldocinsight.document_service.config.S3Properties;
+import com.legaldocinsight.document_service.service.StorageService;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
+
+// The upload URL prototype is incomplete; it is not an active storage bean.
+public abstract class S3StorageService implements StorageService {
 
     private final S3Presigner s3Presigner;
     private final S3Properties properties;
@@ -15,7 +22,7 @@ public class S3StorageService implements StorageService {
     }
 
     @Override
-    public String generatePresignedUploadUrl(
+    public String generateUploadUrl(
             String objectKey,
             String contentType
     ) {

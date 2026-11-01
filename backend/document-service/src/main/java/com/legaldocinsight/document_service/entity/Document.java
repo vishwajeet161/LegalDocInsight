@@ -6,6 +6,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
 @Table(name = "documents")
@@ -35,6 +36,17 @@ public class Document {
 
     @Column(columnDefinition = "TEXT")
     private String extractedTextFilePath;
+
+    @Column(columnDefinition = "TEXT")
+    private String extractedText;
+
+    private Integer pageCount;
+
+    private Integer characterCount;
+
+    private String accessTokenHash;
+
+    private Instant accessTokenExpiresAt;
 
 
     @Enumerated(EnumType.STRING)

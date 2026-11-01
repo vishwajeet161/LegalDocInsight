@@ -7,11 +7,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
-import java.util.List;
 
 @Slf4j
 @RestController
@@ -20,42 +19,45 @@ import java.util.List;
 public class DocumentController {
 
     private final DocumentService documentService;
+    private final UploadCapacity uploadCapacity;
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<DocumentUploadResponse> uploadDocument(
-            @RequestPart("file") MultipartFile file,
-            @RequestHeader(value = "X-User-Id", required = false, defaultValue = "anonymous") String userId,
-            @RequestHeader(value = "X-User-Role", required = false, defaultValue = "GUEST") String userRole) {
-        log.info("Upload request: file={} userId={}", file.getOriginalFilename(), userId);
-        return ResponseEntity.status(HttpStatus.ACCEPTED)
-            .body(documentService.uploadDocument(file, userId));
+            @RequestPart("file") MultipartFile file) {
+        log.info("Upload request received");
+        if (!uploadCapacity.tryAcquire()) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header("Retry-After", "5").build();
+        }
+        try {
+            return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .cacheControl(CacheControl.noStore())
+                .body(documentService.uploadDocument(file, null));
+        } finally {
+            uploadCapacity.release();
+        }
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<DocumentResponse> getDocument(
             @PathVariable String id,
-            @RequestHeader("X-User-Id") String userId) {
-        return ResponseEntity.ok(documentService.getDocument(id, userId));
+            @RequestHeader(value = "X-Document-Token", required = false) String token) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+            .body(documentService.getDocument(id, token));
     }
 
     @GetMapping("/{id}/text")
     public ResponseEntity<DocumentResponse> getDocumentWithText(
             @PathVariable String id,
-            @RequestHeader("X-User-Id") String userId) {
-        return ResponseEntity.ok(documentService.getDocumentWithText(id, userId));
-    }
-
-    @GetMapping
-    public ResponseEntity<List<DocumentResponse>> getUserDocuments(
-            @RequestHeader("X-User-Id") String userId) {
-        return ResponseEntity.ok(documentService.getUserDocuments(userId));
+            @RequestHeader(value = "X-Document-Token", required = false) String token) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+            .body(documentService.getDocumentWithText(id, token));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteDocument(
             @PathVariable String id,
-            @RequestHeader("X-User-Id") String userId) {
-        documentService.deleteDocument(id, userId);
+            @RequestHeader(value = "X-Document-Token", required = false) String token) {
+        documentService.deleteDocument(id, token);
         return ResponseEntity.noContent().build();
     }
 }

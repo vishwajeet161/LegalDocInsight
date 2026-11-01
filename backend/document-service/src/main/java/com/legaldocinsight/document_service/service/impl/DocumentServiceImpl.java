@@ -13,12 +13,24 @@ import com.legaldocinsight.document_service.service.StorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.apache.tika.Tika;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.Duration;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.util.Base64;
+import java.util.HexFormat;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -32,23 +44,30 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentRepository documentRepository;
     private final StorageService storageService;
     private final ExtractionOrchestrator extractionOrchestrator;  // separate bean for @Async
+    private static final SecureRandom TOKEN_RANDOM = new SecureRandom();
+
+    @Value("${document.access-token-ttl:PT168H}")
+    private Duration accessTokenTtl = Duration.ofDays(7);
 
     private static final List<String> ALLOWED_TYPES = Arrays.asList(
         "application/pdf",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/msword",
-        "text/plain"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     );
 
-    private static final long MAX_FILE_SIZE = 50 * 1024 * 1024L; // 50MB
+    @Value("${document.upload.max-bytes:10485760}")
+    private long maxFileSize = 10 * 1024 * 1024L;
 
     @Override
     @Transactional
     public DocumentUploadResponse uploadDocument(MultipartFile file, String userId) {
-        log.info("Upload started: file={} size={} userId={}",
-            file.getOriginalFilename(), file.getSize(), userId);
-
         validateFile(file);
+        log.info("Upload started: size={}", file.getSize());
+
+        byte[] tokenBytes = new byte[32];
+        TOKEN_RANDOM.nextBytes(tokenBytes);
+        String accessToken = Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes);
+        String tokenHash = HexFormat.of().formatHex(sha256(tokenBytes));
+        Instant expiresAt = Instant.now().plus(accessTokenTtl);
 
         // 1. Save record immediately with PENDING status
         Document document = Document.builder()
@@ -58,7 +77,8 @@ public class DocumentServiceImpl implements DocumentService {
             .fileSize(file.getSize())
             .fileType(file.getContentType())
             .status(DocumentStatus.PENDING)
-            .uploadedBy(userId)
+            .accessTokenHash(tokenHash)
+            .accessTokenExpiresAt(expiresAt)
             .build();
 
         document = documentRepository.save(document);
@@ -68,6 +88,18 @@ public class DocumentServiceImpl implements DocumentService {
         // 2. Store file to disk
         try {
             String filePath = storageService.store(file, documentId);
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                        try {
+                            storageService.delete(filePath);
+                        } catch (Exception ex) {
+                            log.error("Failed to remove file after rollback: documentId={}", documentId, ex);
+                        }
+                    }
+                }
+            });
             document.setFilePath(filePath);
             document.setStoredFileName(documentId);
             documentRepository.save(document);
@@ -92,6 +124,8 @@ public class DocumentServiceImpl implements DocumentService {
 
         return DocumentUploadResponse.builder()
             .documentId(documentId)
+            .accessToken(accessToken)
+            .expiresAt(expiresAt)
             .fileName(file.getOriginalFilename())
             .fileSize(file.getSize())
             .status(DocumentStatus.PENDING)
@@ -127,10 +161,11 @@ public class DocumentServiceImpl implements DocumentService {
         try {
             storageService.delete(document.getFilePath());
         } catch (Exception e) {
-            log.warn("Could not delete file from storage: documentId={}", documentId);
+            log.error("Could not delete file from storage: documentId={}", documentId);
+            throw new IllegalStateException("Failed to delete document file", e);
         }
         documentRepository.delete(document);
-        log.info("Document deleted: documentId={} userId={}", documentId, userId);
+        log.info("Document deleted: documentId={}", documentId);
     }
 
     // ─── Helpers ────────────────────────────────────────────────
@@ -139,26 +174,66 @@ public class DocumentServiceImpl implements DocumentService {
         Document document = documentRepository.findById(documentId)
             .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
-        if (!document.getUploadedBy().equals(userId)) {
-            log.warn("Unauthorized: documentId={} requestedBy={} ownedBy={}",
-                documentId, userId, document.getUploadedBy());
+        if (!tokenMatches(document, userId)) {
+            log.warn("Document access denied: documentId={}", documentId);
             throw new DocumentAccessDeniedException(documentId);
         }
         return document;
+    }
+
+    private boolean tokenMatches(Document document, String suppliedToken) {
+        if (suppliedToken == null || document.getAccessTokenHash() == null
+                || document.getAccessTokenExpiresAt() == null
+                || !document.getAccessTokenExpiresAt().isAfter(Instant.now())) {
+            return false;
+        }
+        try {
+            byte[] suppliedBytes = Base64.getUrlDecoder().decode(suppliedToken);
+            if (suppliedBytes.length != 32) return false;
+            byte[] expectedHash = HexFormat.of().parseHex(document.getAccessTokenHash());
+            return MessageDigest.isEqual(expectedHash, sha256(suppliedBytes));
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
+    }
+
+    private static byte[] sha256(byte[] input) {
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(input);
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
     }
 
     private void validateFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new InvalidFileException("File is empty or missing");
         }
-        if (file.getSize() > MAX_FILE_SIZE) {
-            throw new InvalidFileException("File exceeds maximum size of 50MB");
+        if (file.getSize() > maxFileSize) {
+            throw new InvalidFileException("File exceeds the configured size limit");
         }
         if (!ALLOWED_TYPES.contains(file.getContentType())) {
             throw new InvalidFileException(
                 "Unsupported file type: " + file.getContentType() +
-                ". Allowed: PDF, DOCX, DOC, TXT"
+                ". Allowed: PDF, DOCX"
             );
+        }
+        String name = file.getOriginalFilename();
+        if (name == null || name.isBlank() || name.contains("/") || name.contains("\\")) {
+            throw new InvalidFileException("Invalid file name");
+        }
+        String lowerName = name.toLowerCase(Locale.ROOT);
+        boolean pdf = lowerName.endsWith(".pdf") && "application/pdf".equals(file.getContentType());
+        boolean docx = lowerName.endsWith(".docx")
+            && ALLOWED_TYPES.get(1).equals(file.getContentType());
+        if (!pdf && !docx) throw new InvalidFileException("File extension and type do not match");
+        try (InputStream content = file.getInputStream()) {
+            String detected = new Tika().detect(content, name);
+            if (!file.getContentType().equals(detected)) {
+                throw new InvalidFileException("File contents do not match the claimed type");
+            }
+        } catch (IOException ex) {
+            throw new InvalidFileException("Unable to read file contents");
         }
     }
 

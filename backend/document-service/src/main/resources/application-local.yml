@@ -1,0 +1,20 @@
+# Local development profile. Do not use these defaults for a public deployment.
+server:
+  port: 8081
+
+spring:
+  datasource:
+    url: ${DOCUMENT_DB_URL:jdbc:postgresql://localhost:5432/legaldoc_dev}
+    username: ${DOCUMENT_DB_USER:legaldoc_dev}
+    password: ${DOCUMENT_DB_PASSWORD:local-development-only}
+  jpa:
+    hibernate:
+      ddl-auto: update
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
+
+storage:
+  local:
+    upload-dir: ${DOCUMENT_STORAGE_DIR:./storage}

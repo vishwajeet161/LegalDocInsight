@@ -1,0 +1,68 @@
+# Local development only. This file does not configure the public deployment.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: legaldoc_dev
+      POSTGRES_USER: legaldoc_dev
+      POSTGRES_PASSWORD: ${LEGALDOC_DEV_DB_PASSWORD:-local-development-only}
+    ports:
+      - "127.0.0.1:${LEGALDOC_DEV_DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  maven:
+    image: maven:3.9-eclipse-temurin-21
+    profiles: ["tools"]
+    working_dir: /workspace/backend
+    volumes:
+      - .:/workspace
+      - ${LEGALDOC_MAVEN_CACHE:-maven-cache}:/root/.m2
+    entrypoint: ["mvn", "--no-transfer-progress"]
+    command: ["test"]
+
+  document-service:
+    image: maven:3.9-eclipse-temurin-21
+    profiles: ["app"]
+    working_dir: /workspace/backend/document-service
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      DOCUMENT_DB_URL: jdbc:postgresql://postgres:5432/legaldoc_dev
+      DOCUMENT_DB_USER: legaldoc_dev
+      DOCUMENT_DB_PASSWORD: ${LEGALDOC_DEV_DB_PASSWORD:-local-development-only}
+      DOCUMENT_STORAGE_DIR: /data
+    volumes:
+      - .:/workspace
+      - ${LEGALDOC_MAVEN_CACHE:-maven-cache}:/root/.m2
+      - document-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["mvn", "--no-transfer-progress"]
+    command: ["spring-boot:run"]
+
+  gateway:
+    image: maven:3.9-eclipse-temurin-21
+    profiles: ["app"]
+    working_dir: /workspace/backend/api-gateway
+    environment:
+      DOCUMENT_SERVICE_URL: http://document-service:8081
+    ports:
+      - "127.0.0.1:${LEGALDOC_DEV_GATEWAY_PORT:-8080}:8080"
+    volumes:
+      - .:/workspace
+      - ${LEGALDOC_MAVEN_CACHE:-maven-cache}:/root/.m2
+    depends_on:
+      - document-service
+    entrypoint: ["mvn", "--no-transfer-progress"]
+    command: ["spring-boot:run"]
+
+volumes:
+  postgres-data:
+  maven-cache:
+  document-data:

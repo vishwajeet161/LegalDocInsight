@@ -16,6 +16,13 @@ Read `README.md`, `docs/CURRENT_ARCHITECTURE.md`, and `docs/ARCHITECTURE_GAP_ANA
 - Keep secrets, credentials, and real legal documents out of source control, tests, logs, and agent responses. Do not trust a client-supplied user ID as proof of document ownership.
 - If implementation differs from documentation, report the difference and update the relevant documentation as part of the approved task.
 
+## Feature workflow
+
+- Use spec-driven development for each release feature. Read `docs/FIRST_RELEASE_SCOPE.md` and the relevant section of `docs/superpowers/plans/2026-11-01-first-release.md`, then write a focused feature specification using `docs/FEATURE_SPEC_TEMPLATE.md` before implementation.
+- Base the specification on the current code and the user's decisions. Record observable acceptance criteria, interfaces, security and failure behavior, and meaningful tests. Resolve material ambiguities before dependent work.
+- Implement against the specification, run the relevant tests, and record results and outstanding work in the feature specification so a later session can continue. Update the release plan when feature status changes.
+- Subagents are optional and should be used only when the user requests or approves their use; spec-driven development does not require them.
+
 ## Verification and reporting
 
 - For backend work, use the Maven wrappers in the affected service directories; for frontend work, use scripts from `frontend/package.json`. Commands and their success have not yet been verified for this checkout, so report actual results and any environment blockers.

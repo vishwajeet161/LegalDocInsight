@@ -19,6 +19,7 @@ import reactor.core.publisher.Mono;
 
 // import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 
 @Slf4j
 @Component
@@ -63,7 +64,14 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         return routeLocator.getRoutes()
             .filterWhen(route -> route.getPredicate().apply(exchange))
             .next()
-            .flatMap(route -> {
+            .map(Optional::of)
+            .defaultIfEmpty(Optional.empty())
+            .flatMap(matched -> {
+                if (matched.isEmpty()) {
+                    log.debug("No route matched for path={}, passing through", path);
+                    return chain.filter(exchange).doFinally(signal -> MDC.clear());
+                }
+                var route = matched.get();
                 Object requiresAuth = route.getMetadata().getOrDefault("requiresAuth", true);
                 boolean isPublic = requiresAuth.toString().equalsIgnoreCase("false");
 
@@ -73,11 +81,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
                 }
 
                 return authenticate(exchange, chain, request, path, finalCorrelationId);
-            })
-            .switchIfEmpty(Mono.defer(() -> {
-                log.debug("No route matched for path={}, passing through", path);
-                return chain.filter(exchange);
-            }));
+            });
     }
 
     private Mono<Void> authenticate(ServerWebExchange exchange, GatewayFilterChain chain,
