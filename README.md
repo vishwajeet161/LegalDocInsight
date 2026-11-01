@@ -4,9 +4,9 @@ LegalDocInsight is a work-in-progress application for analyzing legal documents.
 
 ## Project status
 
-**The first release is planned, not yet implemented end to end.** The repository currently contains an Angular landing and upload interface, an API gateway, document upload and extraction code, and an analysis-service stub. The document service has build and configuration issues identified in the discovery review; there is no completed analysis report or chat workflow.
+**The first release is in development, not yet implemented end to end.** The repository contains an Angular landing and upload interface, an API gateway, document upload and extraction code, and an analysis-service stub. Initial Java 21 build repairs, anonymous access tokens and gateway upload limits are in progress; there is no completed analysis report or chat workflow.
 
-The intended first-release protections, including anonymous access tokens, rate limiting, malware scanning and isolated parsing, are also planned. Do not deploy the current implementation as a public document-upload service.
+Anonymous access and rate limiting have initial implementations, but the complete first-release protections have not been verified. Malware scanning and isolated parsing remain planned. Do not deploy the current implementation as a public document-upload service.
 
 For the code-level findings, see [Current architecture](docs/CURRENT_ARCHITECTURE.md) and [Architecture gap analysis](docs/ARCHITECTURE_GAP_ANALYSIS.md).
 
@@ -55,13 +55,13 @@ Ollama serving Qwen3:8b is an initial model candidate; its hardware requirements
 - Uploads are checked for supported type and size, scanned before parsing in the public deployment profile, and parsed with isolation and resource limits.
 - Internal services and storage remain private. Secrets, access tokens and document contents must not appear in logs.
 
-These controls are part of the release plan and have not yet been verified in the current application. The single-instance in-memory rate limiter proposed for the first deployment would need reconsideration if the gateway is scaled to multiple instances.
+The full set of controls remains in progress. The single-instance in-memory rate limiter would need reconsideration if the gateway is scaled to multiple instances.
 
 ## Feature roadmap
 
 | Order | Feature | Status |
 | --- | --- | --- |
-| 1 | Buildable baseline, anonymous upload and access control | Planned |
+| 1 | Buildable baseline, anonymous upload and access control | In progress |
 | 2 | Document validation, scanning, extraction and status | Planned |
 | 3 | Analysis API and report persistence | Planned |
 | 4 | LLM analysis and reliable service handoff | Planned |
@@ -87,11 +87,21 @@ The Maven modules are independent Spring Boot applications. The aggregator lists
 
 ## Development and tests
 
-The first task is to establish a buildable baseline and document a repeatable local setup. The following are existing project entry points, not a verified full-stack setup:
+The first task is to establish a buildable baseline and document a repeatable local setup. The following are project entry points, not a full-stack setup:
 
 - Frontend scripts are listed in [`frontend/package.json`](frontend/package.json), including `npm start`, `npm test` and `npm run build`.
 - Each backend application has its own Maven wrapper. From an individual service directory, `./mvnw test` is the test command to use when the local Java and Maven setup is ready.
 - Existing `application-example.properties` files are examples and are not automatically active Spring configuration. Complete runtime configuration and deployment instructions are part of the planned work.
+
+For macOS or Linux development, `compose.dev.yaml` provides PostgreSQL and Java 21/Maven containers. With Docker Desktop running:
+
+```bash
+docker compose -f compose.dev.yaml --profile app up -d gateway
+docker compose -f compose.dev.yaml run --rm maven -pl api-gateway test
+docker compose -f compose.dev.yaml run --rm maven -pl document-service test
+```
+
+The first command starts the local gateway, document service and PostgreSQL. The gateway listens on `127.0.0.1:8080`; analysis and the frontend are not started by this configuration. The database also binds to localhost and uses a development-only default password. Set `LEGALDOC_DEV_DB_PASSWORD`, `LEGALDOC_DEV_DB_PORT` or `LEGALDOC_DEV_GATEWAY_PORT` to override the local defaults. Compose creates persistent database, document and Maven-cache volumes. Use `docker compose -f compose.dev.yaml --profile app down` to stop the stack without deleting its volumes. This setup is for local development and is not a public deployment.
 
 ## Later possibilities
 
@@ -101,6 +111,7 @@ User accounts and saved history, chat, scanned-document OCR, broader legal sourc
 
 - [First-release scope](docs/FIRST_RELEASE_SCOPE.md)
 - [Feature-by-feature implementation and testing plan](docs/superpowers/plans/2026-11-01-first-release.md)
+- [Feature specification template](docs/FEATURE_SPEC_TEMPLATE.md)
 - [Current architecture](docs/CURRENT_ARCHITECTURE.md)
 - [Architecture gap analysis](docs/ARCHITECTURE_GAP_ANALYSIS.md)
 - [Existing HLD diagram](docs/NEW_LegalDoc_HLD.png)

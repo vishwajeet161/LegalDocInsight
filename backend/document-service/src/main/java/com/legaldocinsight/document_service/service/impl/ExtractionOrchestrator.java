@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.ObjectProvider;
 import java.time.LocalDateTime;
 
 import java.io.InputStream;
@@ -29,7 +30,7 @@ public class ExtractionOrchestrator {
     private final DocumentRepository documentRepository;
     private final StorageService storageService;
     private final TikaExtractionService tikaExtractionService;
-    private final DocumentEventPublisher eventPublisher;
+    private final ObjectProvider<DocumentEventPublisher> eventPublisher;
     // private final DocumentExtractedEvent documentExtractedEvent;
 
     @Async("extractionExecutor")
@@ -75,7 +76,9 @@ public class ExtractionOrchestrator {
             documentId, document.getStatus());
 
 
-        extractAndPublish(document);
+        if (document.getStatus() == DocumentStatus.EXTRACTED) {
+            extractAndPublish(document);
+        }
     }
 
 
@@ -93,6 +96,7 @@ public class ExtractionOrchestrator {
             document.getCharacterCount(),
             LocalDateTime.now()
         );
-        eventPublisher.publishDocumentExtracted(event);
+        DocumentEventPublisher publisher = eventPublisher.getIfAvailable();
+        if (publisher != null) publisher.publishDocumentExtracted(event);
     }
 }

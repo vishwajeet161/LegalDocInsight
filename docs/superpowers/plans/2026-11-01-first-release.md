@@ -1,6 +1,6 @@
 # LegalDocInsight First Release Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For implementers:** Use spec-driven development. Before implementing a feature, create its specification from `docs/FEATURE_SPEC_TEMPLATE.md`, then use superpowers:executing-plans to work through the relevant tasks. Subagent-driven development is optional when the user requests or approves it. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver a deployed anonymous upload-to-LLM-report workflow for Indian commercial contracts, with private temporary report access and a path to accounts later.
 
@@ -36,11 +36,11 @@
 
 **Contract:** Anonymous upload returns `202`, document ID, a separate high-entropy access token and expiry. Only its hash is persisted; the raw token is never logged. Status, text and delete endpoints require the token in a header. Incoming `X-User-Id` never grants access. Gateway atomically checks per-IP and global upload budgets and returns `429` plus `Retry-After` on either limit; status polling has a separate, less costly budget. Direct document-service access enforces its own size/concurrency limits. Original file and metadata survive restart. Configure one active storage implementation and one PostgreSQL instance; fix entity/compiler mismatches and align upload limits.
 
-- [ ] Write tests for token creation/hash storage, missing/wrong/expired token, forged identity header, upload, extension/type/signature mismatch, empty/oversize upload, per-IP and global `429`/`Retry-After`, atomic budget checks, spoofed forwarded IP, polling isolation and persistence; run them to observe current failure.
-- [ ] Make the smallest build/config/security changes that satisfy those tests; remove ambiguous storage wiring from the active profile.
-- [ ] Run `./mvnw test` in document-service and gateway and record actual results; manually verify an upload through gateway.
+- [x] Write tests for token creation/hash storage, missing/wrong/expired token, forged identity header, upload, extension/type/signature mismatch, empty/oversize upload, per-IP and global `429`/`Retry-After`, atomic budget checks, spoofed forwarded IP, polling isolation and persistence; run them to observe current failure.
+- [x] Make the smallest build/config/security changes that satisfy those tests; remove ambiguous storage wiring from the active profile.
+- [x] Run both service test suites in a Java 21 Maven container and record actual results; manually verify an upload through gateway. The host Maven wrapper could not initialize reliably, so Docker was used instead.
 
-**Exit:** Gateway and document-service build and start from documented config; upload persists and another visitor cannot read/delete it without its token. No user table is created.
+**Exit:** Gateway and document-service build and start from documented config; upload persists and another visitor cannot read/delete it without its token. No user table is created. Local checks are recorded in `docs/features/01-anonymous-private-upload.md`; review remains pending.
 
 ## Feature 2 — Extraction and durable document status
 

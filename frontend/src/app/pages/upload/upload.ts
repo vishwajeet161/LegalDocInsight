@@ -61,11 +61,9 @@ export class Upload {
   }
 
   analyzeDoc(event: any){
-    console.log(event);
     let file = this.file();
     this.analysisService.analyzeFile(file).subscribe(
       (response) => {
-        console.log('Uploaded Document ID:', response);
         this.docId = response.documentId;
 
         // Handle the response as needed

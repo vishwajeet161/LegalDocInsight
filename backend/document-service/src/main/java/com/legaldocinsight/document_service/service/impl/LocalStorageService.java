@@ -56,9 +56,15 @@ public class LocalStorageService implements StorageService {
         String extension = getExtension(file.getOriginalFilename());
         String storedFileName = documentId + extension;
         Path destination = Paths.get(uploadDir).resolve(storedFileName);
+        Path temporary = Files.createTempFile(Paths.get(uploadDir), documentId + "-", ".upload");
 
-        try (InputStream inputStream = file.getInputStream()) {
-            Files.copy(inputStream, destination, StandardCopyOption.REPLACE_EXISTING);
+        try {
+            try (InputStream inputStream = file.getInputStream()) {
+                Files.copy(inputStream, temporary, StandardCopyOption.REPLACE_EXISTING);
+            }
+            Files.move(temporary, destination);
+        } finally {
+            Files.deleteIfExists(temporary);
         }
 
         log.debug("Stored file: {} -> {}", file.getOriginalFilename(), destination.toAbsolutePath());
