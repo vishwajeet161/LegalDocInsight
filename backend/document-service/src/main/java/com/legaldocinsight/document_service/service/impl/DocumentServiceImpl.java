@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.web.multipart.MultipartFile;
 import org.apache.tika.Tika;
 
@@ -117,7 +118,11 @@ public class DocumentServiceImpl implements DocumentService {
             new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    extractionOrchestrator.extractAsync(documentId);
+                    try {
+                        extractionOrchestrator.extractAsync(documentId);
+                    } catch (TaskRejectedException full) {
+                        log.info("Extraction deferred until capacity is available: documentId={}", documentId);
+                    }
                 }
             }
         );
@@ -243,12 +248,13 @@ public class DocumentServiceImpl implements DocumentService {
             .originalFileName(doc.getOriginalFileName())
             .fileSize(doc.getFileSize())
             .fileType(doc.getFileType())
-            .status(doc.getStatus())
+            .status(doc.getStatus() == null ? null
+                : doc.getStatus() == DocumentStatus.PROCESSING ? "EXTRACTING" : doc.getStatus().name())
             .pageCount(doc.getPageCount())
             .characterCount(doc.getCharacterCount())
             .extractedText(includeText ? doc.getExtractedText() : null)
             .uploadedBy(doc.getUploadedBy())
-            .errorMessage(doc.getErrorMessage())
+            .errorMessage(doc.getStatus() == DocumentStatus.FAILED ? "Text extraction failed." : null)
             .createdAt(doc.getCreatedAt())
             .updatedAt(doc.getUpdatedAt())
             .build();

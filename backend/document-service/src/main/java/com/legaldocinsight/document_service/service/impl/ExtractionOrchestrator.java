@@ -10,7 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.beans.factory.ObjectProvider;
 import java.time.LocalDateTime;
 
@@ -31,53 +31,47 @@ public class ExtractionOrchestrator {
     private final StorageService storageService;
     private final TikaExtractionService tikaExtractionService;
     private final ObjectProvider<DocumentEventPublisher> eventPublisher;
+    private final TransactionTemplate transactions;
     // private final DocumentExtractedEvent documentExtractedEvent;
 
     @Async("extractionExecutor")
-    @Transactional
     public void extractAsync(String documentId) {
         log.info("Async extraction started: documentId={}", documentId);
 
-        Document document = documentRepository.findById(documentId)
-            .orElseThrow(() -> new RuntimeException("Document not found: " + documentId));
-
-        // Mark as PROCESSING
-        document.setStatus(DocumentStatus.PROCESSING);
-        documentRepository.save(document);
-
-        try (InputStream inputStream = storageService.retrieve(document.getFilePath())) {
-
-            TikaExtractionService.ExtractionResult result =
-                tikaExtractionService.extract(inputStream, document.getOriginalFileName());
-
-            if (result.isSuccess()) {
-                document.setExtractedText(result.getText());
-                document.setCharacterCount(result.getCharacterCount());
-                document.setPageCount(result.getPageCount());
-                document.setStatus(DocumentStatus.EXTRACTED);
-
-                log.info("Extraction complete: documentId={} chars={} pages={}",
-                    documentId, result.getCharacterCount(), result.getPageCount());
-            } else {
-                document.setStatus(DocumentStatus.FAILED);
-                document.setErrorMessage(result.getErrorMessage());
-                log.error("Extraction failed: documentId={} reason={}",
-                    documentId, result.getErrorMessage());
+        Document document = transactions.execute(status -> {
+            if (documentRepository.claimPending(documentId, DocumentStatus.PENDING, DocumentStatus.PROCESSING) != 1) {
+                return null;
             }
+            return documentRepository.findById(documentId).orElse(null);
+        });
+        if (document == null) return;
 
+        TikaExtractionService.ExtractionResult result;
+        try (InputStream inputStream = storageService.retrieve(document.getFilePath())) {
+            result = tikaExtractionService.extract(inputStream, document.getOriginalFileName());
         } catch (Exception e) {
-            document.setStatus(DocumentStatus.FAILED);
-            document.setErrorMessage(e.getMessage());
-            log.error("Extraction exception: documentId={}", documentId, e);
+            log.error("Extraction failed: documentId={}", documentId);
+            result = TikaExtractionService.ExtractionResult.builder().success(false).build();
         }
 
-        documentRepository.save(document);
-        log.info("Document status updated: documentId={} status={}",
-            documentId, document.getStatus());
-
-
-        if (document.getStatus() == DocumentStatus.EXTRACTED) {
-            extractAndPublish(document);
+        TikaExtractionService.ExtractionResult extraction = result;
+        Document completed = transactions.execute(status -> {
+            Document current = documentRepository.findById(documentId).orElse(null);
+            if (current == null || current.getStatus() != DocumentStatus.PROCESSING) return null;
+            if (extraction.isSuccess()) {
+                current.setExtractedText(extraction.getText());
+                current.setCharacterCount(extraction.getCharacterCount());
+                current.setPageCount(extraction.getPageCount());
+                current.setStatus(DocumentStatus.EXTRACTED);
+                current.setErrorMessage(null);
+            } else {
+                current.setStatus(DocumentStatus.FAILED);
+                current.setErrorMessage("Text extraction failed.");
+            }
+            return documentRepository.save(current);
+        });
+        if (completed != null && completed.getStatus() == DocumentStatus.EXTRACTED) {
+            extractAndPublish(completed);
         }
     }
 

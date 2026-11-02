@@ -1,6 +1,5 @@
 package com.legaldocinsight.document_service.dto;
 
-import com.legaldocinsight.document_service.entity.Document.DocumentStatus;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -12,7 +11,7 @@ public class DocumentResponse {
     private String originalFileName;
     private Long fileSize;
     private String fileType;
-    private DocumentStatus status;
+    private String status;
     private Integer pageCount;
     private Integer characterCount;
     private String extractedText;

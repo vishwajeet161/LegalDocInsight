@@ -1,5 +1,7 @@
 # Current architecture (repository inspection, 2026-11-01)
 
+**Historical snapshot:** This discovery predates Feature 1 and is not a current inventory. In the checked-out Feature 1 implementation, local Compose configuration, token-protected document access, upload validation and gateway limits exist; extraction remains in-process and lacks restart recovery and scanning. See the [Feature 1 specification](features/01-anonymous-private-upload.md) and the [Feature 2 draft](features/02-extraction-durable-status.md) for later findings and verification limits.
+
 ## Scope and evidence
 
 This describes checked-in code, not a running deployment. The requested `docs/original-hld.png` is absent; the only diagram is `docs/NEW_LegalDoc_HLD.png`. The root `README.md` is another statement of intent, not evidence of implemented features. No local `application.properties` is checked in (it is ignored), so an untracked deployment may differ. Maven is unavailable in this environment; runtime behavior below is inferred from code and configuration, not confirmed by an end-to-end run.

@@ -1,5 +1,7 @@
 # Architecture gap analysis (2026-11-01)
 
+**Historical snapshot:** This discovery predates Feature 1. Its observations about the then-current code should not be read as the current implementation, and its architectural recommendations are not approved refactoring instructions. See the [Feature 1 specification](features/01-anonymous-private-upload.md) and [Feature 2 draft](features/02-extraction-durable-status.md) for more recent findings.
+
 ## Source of comparison
 
 `docs/original-hld.png` is not in this checkout. This comparison uses the available `docs/NEW_LegalDoc_HLD.png` and root `README.md` as the intended HLD. See `CURRENT_ARCHITECTURE.md` for checked-in evidence and operational limits. The recommendation is for finishing the product with minimal reasonable change, not an architectural refactor performed in this phase.
