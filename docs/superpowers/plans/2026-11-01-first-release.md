@@ -40,9 +40,11 @@
 - [x] Make the smallest build/config/security changes that satisfy those tests; remove ambiguous storage wiring from the active profile.
 - [x] Run both service test suites in a Java 21 Maven container and record actual results; manually verify an upload through gateway. The host Maven wrapper could not initialize reliably, so Docker was used instead.
 
-**Exit:** Gateway and document-service build and start from documented config; upload persists and another visitor cannot read/delete it without its token. No user table is created. Local checks are recorded in `docs/features/01-anonymous-private-upload.md`; review remains pending.
+**Exit:** Gateway and document-service build and start from documented config; upload persists and another visitor cannot read/delete it without its token. No user table is created. Local checks are recorded in `docs/features/01-anonymous-private-upload.md`. The user reports Feature 1 was reviewed and merged; the local `main` and `origin/main` references inspected on 2026-11-02 had not yet reflected that merge.
 
 ## Feature 2 — Extraction and durable document status
+
+**Status (2026-11-02):** Specification approved at `docs/features/02-extraction-durable-status.md`. Status mapping/client, separately committed processing, initial single-instance recovery and a standalone scanner client have tests; a real process-restart check, atomic admission, scanner wiring, isolation and full verification remain outstanding. See the specification for actual test results and limitations.
 
 **Files:** Modify `ExtractionOrchestrator.java`, `TikaExtractionService.java`, `Document.java`, `DocumentRepository.java`, document DTO/controller, parser configuration/dependency and frontend status client. Add a scanner adapter and a local scanner deployment/configuration for the internet-facing profile. Create `TikaExtractionServiceTest.java`, `UploadScanTest.java`, `ExtractionLifecycleIntegrationTest.java`, and safe PDF/DOCX/adversarial fixtures under document-service `src/test/resources/`.
 

@@ -4,7 +4,7 @@ LegalDocInsight is a work-in-progress application for analyzing legal documents.
 
 ## Project status
 
-**The first release is in development, not yet implemented end to end.** The repository contains an Angular landing and upload interface, an API gateway, document upload and extraction code, and an analysis-service stub. Initial Java 21 build repairs, anonymous access tokens and gateway upload limits are in progress; there is no completed analysis report or chat workflow.
+**The first release is in development, not yet implemented end to end.** The repository contains an Angular landing and upload interface, an API gateway, document upload and extraction code, and an analysis-service stub. Feature 1 implemented the initial Java 21 build repairs, anonymous access tokens and gateway upload limits; there is no completed analysis report or chat workflow.
 
 Anonymous access and rate limiting have initial implementations, but the complete first-release protections have not been verified. Malware scanning and isolated parsing remain planned. Do not deploy the current implementation as a public document-upload service.
 
@@ -61,8 +61,8 @@ The full set of controls remains in progress. The single-instance in-memory rate
 
 | Order | Feature | Status |
 | --- | --- | --- |
-| 1 | Buildable baseline, anonymous upload and access control | In progress |
-| 2 | Document validation, scanning, extraction and status | Planned |
+| 1 | Buildable baseline, anonymous upload and access control | Complete (user reports merged) |
+| 2 | Document validation, scanning, extraction and status | In progress |
 | 3 | Analysis API and report persistence | Planned |
 | 4 | LLM analysis and reliable service handoff | Planned |
 | 5 | Curated Indian-law sources and report evaluation | Planned |

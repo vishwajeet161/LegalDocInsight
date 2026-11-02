@@ -2,6 +2,8 @@ package com.legaldocinsight.document_service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.legaldocinsight.document_service.service.impl.ExtractionOrchestrator;
+import com.legaldocinsight.document_service.repository.DocumentRepository;
+import com.legaldocinsight.document_service.entity.Document.DocumentStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -20,6 +22,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:h2:mem:documenttest;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
@@ -31,7 +34,42 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class DocumentUploadIntegrationTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
+    @Autowired DocumentRepository documents;
     @MockitoBean ExtractionOrchestrator extraction;
+
+    @Test
+    void statusUsesReleaseVocabularyAndOmitsExtractedText() throws Exception {
+        var file = new MockMultipartFile("file", "contract.pdf", MediaType.APPLICATION_PDF_VALUE,
+            "%PDF-1.4\n%%EOF".getBytes(StandardCharsets.US_ASCII));
+        var response = mvc.perform(multipart("/api/documents/upload").file(file))
+            .andExpect(status().isAccepted()).andReturn().getResponse();
+        var body = json.readTree(response.getContentAsString());
+        var id = body.get("documentId").asText();
+        var token = body.get("accessToken").asText();
+        var document = documents.findById(id).orElseThrow();
+        document.setExtractedText("Synthetic private text");
+        document.setStatus(DocumentStatus.PROCESSING);
+        documents.saveAndFlush(document);
+
+        mvc.perform(get("/api/documents/{id}", id)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/documents/{id}", id).header("X-Document-Token", token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("EXTRACTING"))
+            .andExpect(jsonPath("$.extractedText").doesNotExist());
+
+        document.setStatus(DocumentStatus.EXTRACTED);
+        documents.saveAndFlush(document);
+        mvc.perform(get("/api/documents/{id}", id).header("X-Document-Token", token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("EXTRACTED"))
+            .andExpect(jsonPath("$.extractedText").doesNotExist());
+        document.setStatus(DocumentStatus.FAILED);
+        document.setErrorMessage("synthetic raw parser exception with private path");
+        documents.saveAndFlush(document);
+        mvc.perform(get("/api/documents/{id}", id).header("X-Document-Token", token))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FAILED"))
+            .andExpect(jsonPath("$.errorMessage").value("Text extraction failed."));
+        mvc.perform(delete("/api/documents/{id}", id).header("X-Document-Token", token))
+            .andExpect(status().isNoContent());
+    }
 
     @Test
     void uploadedDocumentRequiresItsAccessTokenEvenWithForgedUserHeader() throws Exception {

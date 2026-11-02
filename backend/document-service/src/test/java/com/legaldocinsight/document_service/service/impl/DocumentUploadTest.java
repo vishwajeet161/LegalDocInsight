@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.core.task.TaskRejectedException;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
@@ -21,8 +22,35 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.doThrow;
 
 class DocumentUploadTest {
+    @Test
+    void fullExecutorDoesNotTurnAnAcceptedUploadIntoAnErrorAfterCommit() throws Exception {
+        var repository = mock(DocumentRepository.class);
+        var storage = mock(StorageService.class);
+        var extraction = mock(ExtractionOrchestrator.class);
+        var service = new DocumentServiceImpl(repository, storage, extraction);
+        when(repository.save(any(Document.class))).thenAnswer(invocation -> {
+            Document document = invocation.getArgument(0);
+            document.setId("document-1");
+            return document;
+        });
+        when(storage.store(any(), anyString())).thenReturn("stored/document-1.pdf");
+        doThrow(new TaskRejectedException("full")).when(extraction).extractAsync("document-1");
+        var file = new MockMultipartFile("file", "contract.pdf", "application/pdf",
+            "%PDF-1.4\n%%EOF".getBytes(StandardCharsets.US_ASCII));
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.uploadDocument(file, null);
+            assertDoesNotThrow(() -> TransactionSynchronizationManager.getSynchronizations()
+                .forEach(TransactionSynchronization::afterCommit));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
     @Test
     void uploadReturnsTokenAndStoresOnlyItsVerifier() throws Exception {
         var repository = mock(DocumentRepository.class);
