@@ -43,7 +43,7 @@ Analysis service -- LLM analysis and report persistence
 Frontend polls document-service for status and the report.
 ```
 
-The gateway, document service and analysis service remain separate Spring Boot applications for the first release. The planned handoff from document service to analysis service uses internal HTTP. One PostgreSQL instance and a persistent local file volume support the initial single-host deployment. A local malware scanner and a model runtime are also planned.
+The gateway, document service and analysis service remain separate Spring Boot applications for the first release. The planned handoff from document service to analysis service uses internal HTTP. One PostgreSQL instance and a persistent local file volume support the initial single-host deployment. The development stack includes a private malware scanner; a model runtime is planned.
 
 Ollama serving Qwen3:8b is an initial model candidate; its hardware requirements and report quality must be measured before selection. The model endpoint and name are intended to be configurable.
 
@@ -101,7 +101,7 @@ docker compose -f compose.dev.yaml run --rm maven -pl api-gateway test
 docker compose -f compose.dev.yaml run --rm maven -pl document-service test
 ```
 
-The first command starts the local gateway, document service and PostgreSQL. The gateway listens on `127.0.0.1:8080`; analysis and the frontend are not started by this configuration. The database also binds to localhost and uses a development-only default password. Set `LEGALDOC_DEV_DB_PASSWORD`, `LEGALDOC_DEV_DB_PORT` or `LEGALDOC_DEV_GATEWAY_PORT` to override the local defaults. Compose creates persistent database, document and Maven-cache volumes. Use `docker compose -f compose.dev.yaml --profile app down` to stop the stack without deleting its volumes. This setup is for local development and is not a public deployment.
+The first command starts the local gateway, document service, PostgreSQL and a private ClamAV scanner. The scanner refreshes its signature database before starting, which needs network access; its x86 image uses emulation on Apple Silicon. The gateway listens on `127.0.0.1:8080`; analysis and the frontend are not started by this configuration. The database also binds to localhost and uses a development-only default password. Set `LEGALDOC_DEV_DB_PASSWORD`, `LEGALDOC_DEV_DB_PORT` or `LEGALDOC_DEV_GATEWAY_PORT` to override the local defaults. Compose creates persistent database, document and Maven-cache volumes. Use `docker compose -f compose.dev.yaml --profile app down` to stop the stack without deleting its volumes. This setup is for local development and is not a public deployment: the parser still runs inside the document-service JVM without the approved OS-enforced resource boundary.
 
 ## Later possibilities
 

@@ -17,6 +17,7 @@ public class DocumentResponse {
     private String extractedText;
     private String uploadedBy;
     private String errorMessage;
+    private String errorCode;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

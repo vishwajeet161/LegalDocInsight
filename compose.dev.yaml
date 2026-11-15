@@ -26,6 +26,26 @@ services:
     entrypoint: ["mvn", "--no-transfer-progress"]
     command: ["test"]
 
+  scanner:
+    # The official image currently requires x86 emulation on Apple Silicon.
+    image: clamav/clamav@sha256:45fe5149fbee5a46509c9848ef20d0c354b7b2323c9369f285939a37cf33422a
+    platform: linux/amd64
+    profiles: ["app"]
+    # Refresh bundled signatures before clamd checks their age at startup.
+    entrypoint: ["/bin/sh", "-c", "freshclam --stdout && exec /init"]
+    environment:
+      CLAMD_CONF_AlertExceedsMax: "yes"
+      CLAMD_CONF_MaxScanSize: 128M
+      CLAMD_CONF_MaxFileSize: 128M
+      CLAMD_CONF_MaxRecursion: "10"
+      CLAMD_CONF_FailIfCvdOlderThan: "7"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 5m
+
   document-service:
     image: maven:3.9-eclipse-temurin-21
     profiles: ["app"]
@@ -36,12 +56,15 @@ services:
       DOCUMENT_DB_USER: legaldoc_dev
       DOCUMENT_DB_PASSWORD: ${LEGALDOC_DEV_DB_PASSWORD:-local-development-only}
       DOCUMENT_STORAGE_DIR: /data
+      DOCUMENT_SCANNER_HOST: scanner
     volumes:
       - .:/workspace
       - ${LEGALDOC_MAVEN_CACHE:-maven-cache}:/root/.m2
       - document-data:/data
     depends_on:
       postgres:
+        condition: service_healthy
+      scanner:
         condition: service_healthy
     entrypoint: ["mvn", "--no-transfer-progress"]
     command: ["spring-boot:run"]

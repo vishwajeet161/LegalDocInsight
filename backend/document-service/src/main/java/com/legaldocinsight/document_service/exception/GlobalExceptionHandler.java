@@ -14,6 +14,11 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(ExtractionCapacityException.class)
+    public ResponseEntity<Void> handleExtractionCapacity(ExtractionCapacityException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header("Retry-After", "5").build();
+    }
+
     @ExceptionHandler(DocumentNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleNotFound(DocumentNotFoundException ex) {
         return error(HttpStatus.NOT_FOUND, ex.getMessage());

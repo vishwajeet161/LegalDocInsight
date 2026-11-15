@@ -6,6 +6,7 @@ import com.legaldocinsight.document_service.entity.Document;
 import com.legaldocinsight.document_service.entity.Document.DocumentStatus;
 import com.legaldocinsight.document_service.exception.DocumentAccessDeniedException;
 import com.legaldocinsight.document_service.exception.DocumentNotFoundException;
+import com.legaldocinsight.document_service.exception.ExtractionCapacityException;
 import com.legaldocinsight.document_service.exception.InvalidFileException;
 import com.legaldocinsight.document_service.repository.DocumentRepository;
 import com.legaldocinsight.document_service.service.DocumentService;
@@ -32,6 +33,7 @@ import java.util.HexFormat;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -45,6 +47,10 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentRepository documentRepository;
     private final StorageService storageService;
     private final ExtractionOrchestrator extractionOrchestrator;  // separate bean for @Async
+    private final ReentrantLock admissionLock = new ReentrantLock();
+
+    @Value("${document.extraction.max-admitted:50}")
+    private int maxAdmitted = 50;
     private static final SecureRandom TOKEN_RANDOM = new SecureRandom();
 
     @Value("${document.access-token-ttl:PT168H}")
@@ -62,6 +68,24 @@ public class DocumentServiceImpl implements DocumentService {
     @Transactional
     public DocumentUploadResponse uploadDocument(MultipartFile file, String userId) {
         validateFile(file);
+        // The supported deployment has exactly one document-service instance.
+        // Hold admission until transaction completion, so another upload sees
+        // the committed PENDING row before it checks the persisted count.
+        admissionLock.lock();
+        try {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    admissionLock.unlock();
+                }
+            });
+        } catch (RuntimeException ex) {
+            admissionLock.unlock();
+            throw ex;
+        }
+        if (documentRepository.countByStatusIn(List.of(DocumentStatus.PENDING, DocumentStatus.PROCESSING)) >= maxAdmitted) {
+            throw new ExtractionCapacityException();
+        }
         log.info("Upload started: size={}", file.getSize());
 
         byte[] tokenBytes = new byte[32];
@@ -255,6 +279,7 @@ public class DocumentServiceImpl implements DocumentService {
             .extractedText(includeText ? doc.getExtractedText() : null)
             .uploadedBy(doc.getUploadedBy())
             .errorMessage(doc.getStatus() == DocumentStatus.FAILED ? "Text extraction failed." : null)
+            .errorCode(doc.getStatus() == DocumentStatus.FAILED ? doc.getErrorCode() : null)
             .createdAt(doc.getCreatedAt())
             .updatedAt(doc.getUpdatedAt())
             .build();

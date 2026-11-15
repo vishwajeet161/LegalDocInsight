@@ -15,6 +15,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import java.time.LocalDateTime;
 
 import java.io.InputStream;
+import java.io.ByteArrayInputStream;
 
 /**
  * Separate bean for async extraction.
@@ -30,6 +31,7 @@ public class ExtractionOrchestrator {
     private final DocumentRepository documentRepository;
     private final StorageService storageService;
     private final TikaExtractionService tikaExtractionService;
+    private final ClamAvScanner scanner;
     private final ObjectProvider<DocumentEventPublisher> eventPublisher;
     private final TransactionTemplate transactions;
     // private final DocumentExtractedEvent documentExtractedEvent;
@@ -46,27 +48,53 @@ public class ExtractionOrchestrator {
         });
         if (document == null) return;
 
-        TikaExtractionService.ExtractionResult result;
+        TikaExtractionService.ExtractionResult result = null;
+        String failureCode = null;
         try (InputStream inputStream = storageService.retrieve(document.getFilePath())) {
-            result = tikaExtractionService.extract(inputStream, document.getOriginalFileName());
+            // The parser consumes precisely the bytes that the scanner examined.
+            // Bound memory even if the stored file changes after upload.
+            byte[] bytes = inputStream.readNBytes(10 * 1024 * 1024 + 1);
+            if (bytes.length > 10 * 1024 * 1024) {
+                failureCode = "INPUT_LIMIT_EXCEEDED";
+            } else {
+                ClamAvScanner.Result scan = scanner.scan(new ByteArrayInputStream(bytes));
+                if (scan == ClamAvScanner.Result.CLEAN) {
+                    result = tikaExtractionService.extract(new ByteArrayInputStream(bytes), document.getOriginalFileName());
+                    if (result == null || !result.isSuccess()) {
+                        failureCode = result != null && result.getErrorCode() != null
+                            ? result.getErrorCode() : "EXTRACTION_FAILED";
+                    }
+                } else if (scan == ClamAvScanner.Result.INFECTED) {
+                    failureCode = "MALWARE_DETECTED";
+                } else if (scan == ClamAvScanner.Result.SCAN_LIMIT_EXCEEDED) {
+                    failureCode = "UNSAFE_ARCHIVE";
+                } else if (scan == ClamAvScanner.Result.TIMEOUT) {
+                    failureCode = "SCANNER_TIMEOUT";
+                } else {
+                    failureCode = "SCANNER_UNAVAILABLE";
+                }
+            }
         } catch (Exception e) {
             log.error("Extraction failed: documentId={}", documentId);
-            result = TikaExtractionService.ExtractionResult.builder().success(false).build();
+            failureCode = "INTERNAL_ERROR";
         }
 
         TikaExtractionService.ExtractionResult extraction = result;
+        String safeFailureCode = failureCode;
         Document completed = transactions.execute(status -> {
             Document current = documentRepository.findById(documentId).orElse(null);
             if (current == null || current.getStatus() != DocumentStatus.PROCESSING) return null;
-            if (extraction.isSuccess()) {
+            if (safeFailureCode == null && extraction != null && extraction.isSuccess()) {
                 current.setExtractedText(extraction.getText());
                 current.setCharacterCount(extraction.getCharacterCount());
                 current.setPageCount(extraction.getPageCount());
                 current.setStatus(DocumentStatus.EXTRACTED);
                 current.setErrorMessage(null);
+                current.setErrorCode(null);
             } else {
                 current.setStatus(DocumentStatus.FAILED);
                 current.setErrorMessage("Text extraction failed.");
+                current.setErrorCode(safeFailureCode != null ? safeFailureCode : "INTERNAL_ERROR");
             }
             return documentRepository.save(current);
         });
