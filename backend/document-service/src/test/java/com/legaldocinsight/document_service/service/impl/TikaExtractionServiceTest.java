@@ -2,6 +2,8 @@ package com.legaldocinsight.document_service.service.impl;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.encryption.AccessPermission;
+import org.apache.pdfbox.pdmodel.encryption.StandardProtectionPolicy;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.junit.jupiter.api.Test;
 
@@ -27,6 +29,19 @@ class TikaExtractionServiceTest {
     }
 
     @Test
+    void encryptedPdfReturnsASafeDistinctFailure() throws Exception {
+        var output = new ByteArrayOutputStream();
+        try (var pdf = new PDDocument()) {
+            pdf.addPage(new PDPage());
+            pdf.protect(new StandardProtectionPolicy("synthetic-owner", "synthetic-user", new AccessPermission()));
+            pdf.save(output);
+        }
+        var result = extractor.extract(new ByteArrayInputStream(output.toByteArray()), "synthetic.pdf");
+        assertFalse(result.isSuccess());
+        assertEquals("ENCRYPTED_DOCUMENT", result.getErrorCode());
+    }
+
+    @Test
     void docxHasTextAndDoesNotInventAZeroPageCount() throws Exception {
         var result = extractor.extract(new ByteArrayInputStream(docx("Synthetic agreement")), "synthetic.docx");
         assertTrue(result.isSuccess());
@@ -42,6 +57,7 @@ class TikaExtractionServiceTest {
         String text = java.util.Base64.getEncoder().encodeToString(random);
         var result = extractor.extract(new ByteArrayInputStream(docx(text)), "synthetic.docx");
         assertFalse(result.isSuccess());
+        assertEquals("OUTPUT_LIMIT_EXCEEDED", result.getErrorCode());
     }
 
     private static byte[] docx(String text) throws Exception {

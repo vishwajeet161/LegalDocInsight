@@ -11,6 +11,8 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.core.task.TaskRejectedException;
 
 import java.nio.charset.StandardCharsets;
+import java.io.InputStream;
+import java.io.IOException;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -25,6 +27,40 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.doThrow;
 
 class DocumentUploadTest {
+    @Test
+    void docxTypeScreeningReadsOnlyTheBoundedSignatureBeforeStorage() throws Exception {
+        var repository = mock(DocumentRepository.class);
+        var storage = mock(StorageService.class);
+        var service = new DocumentServiceImpl(repository, storage, mock(ExtractionOrchestrator.class));
+        when(repository.save(any(Document.class))).thenAnswer(invocation -> {
+            Document document = invocation.getArgument(0);
+            document.setId("document-1");
+            return document;
+        });
+        when(storage.store(any(), anyString())).thenReturn("stored/document-1.docx");
+        var file = new MockMultipartFile("file", "synthetic.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document", new byte[] {'P', 'K', 3, 4}) {
+            @Override public InputStream getInputStream() {
+                return new InputStream() {
+                    int index;
+                    final byte[] signature = {'P', 'K', 3, 4};
+                    @Override public int read() throws IOException {
+                        if (index == signature.length) throw new IOException("Unbounded type detection");
+                        return signature[index++] & 255;
+                    }
+                };
+            }
+        };
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            assertNotNull(service.uploadDocument(file, null).getDocumentId());
+        } finally {
+            TransactionSynchronizationManager.getSynchronizations().forEach(
+                sync -> sync.afterCompletion(TransactionSynchronization.STATUS_COMMITTED));
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
     @Test
     void fullExecutorDoesNotTurnAnAcceptedUploadIntoAnErrorAfterCommit() throws Exception {
         var repository = mock(DocumentRepository.class);

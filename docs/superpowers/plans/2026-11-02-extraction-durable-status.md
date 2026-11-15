@@ -59,6 +59,7 @@
 - [ ] Test text PDF/DOCX, blank/scanned/encrypted PDF, malformed DOCX, archive expansion/entry caps, unknown page count, output limit, crash and timeout; prove timeouts terminate and reap the child.
 - [ ] Implement the parser child and bounded output protocol; reject blank text and unsafe input, never return raw exceptions, and persist text/counts only on success.
 - Progress (2026-11-15): the existing in-process parser rejects blank text and limits extracted characters; unknown page counts are null. This is not the isolated parser required for public use.
+- Later progress (2026-11-15): extraction now uses a child process with a deadline, bounded protocol, archive entry/expansion checks and an optional cgroup-v2 boundary. Real kernel tests exercised the limits and cleanup. A newly added world-writable-cgroup test remains unrun and the corresponding permission check is missing; the public profile remains disabled. See the feature specification for the full handoff and outstanding cases.
 - [ ] Verify the actual resource boundary and run the document-service tests.
 
 ## Task 5: End-to-end and documentation

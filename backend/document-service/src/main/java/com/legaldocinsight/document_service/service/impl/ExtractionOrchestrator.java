@@ -30,7 +30,7 @@ public class ExtractionOrchestrator {
 
     private final DocumentRepository documentRepository;
     private final StorageService storageService;
-    private final TikaExtractionService tikaExtractionService;
+    private final ParserProcess parser;
     private final ClamAvScanner scanner;
     private final ObjectProvider<DocumentEventPublisher> eventPublisher;
     private final TransactionTemplate transactions;
@@ -59,7 +59,7 @@ public class ExtractionOrchestrator {
             } else {
                 ClamAvScanner.Result scan = scanner.scan(new ByteArrayInputStream(bytes));
                 if (scan == ClamAvScanner.Result.CLEAN) {
-                    result = tikaExtractionService.extract(new ByteArrayInputStream(bytes), document.getOriginalFileName());
+                    result = parser.extract(bytes);
                     if (result == null || !result.isSuccess()) {
                         failureCode = result != null && result.getErrorCode() != null
                             ? result.getErrorCode() : "EXTRACTION_FAILED";
@@ -82,21 +82,14 @@ public class ExtractionOrchestrator {
         TikaExtractionService.ExtractionResult extraction = result;
         String safeFailureCode = failureCode;
         Document completed = transactions.execute(status -> {
-            Document current = documentRepository.findById(documentId).orElse(null);
-            if (current == null || current.getStatus() != DocumentStatus.PROCESSING) return null;
-            if (safeFailureCode == null && extraction != null && extraction.isSuccess()) {
-                current.setExtractedText(extraction.getText());
-                current.setCharacterCount(extraction.getCharacterCount());
-                current.setPageCount(extraction.getPageCount());
-                current.setStatus(DocumentStatus.EXTRACTED);
-                current.setErrorMessage(null);
-                current.setErrorCode(null);
-            } else {
-                current.setStatus(DocumentStatus.FAILED);
-                current.setErrorMessage("Text extraction failed.");
-                current.setErrorCode(safeFailureCode != null ? safeFailureCode : "INTERNAL_ERROR");
-            }
-            return documentRepository.save(current);
+            boolean success = safeFailureCode == null && extraction != null && extraction.isSuccess();
+            int updated = documentRepository.finishIfProcessing(documentId, DocumentStatus.PROCESSING,
+                success ? DocumentStatus.EXTRACTED : DocumentStatus.FAILED,
+                success ? extraction.getText() : null, success ? extraction.getPageCount() : null,
+                success ? extraction.getCharacterCount() : null,
+                success ? null : (safeFailureCode != null ? safeFailureCode : "INTERNAL_ERROR"),
+                success ? null : "Text extraction failed.");
+            return updated == 1 ? documentRepository.findById(documentId).orElse(null) : null;
         });
         if (completed != null && completed.getStatus() == DocumentStatus.EXTRACTED) {
             extractAndPublish(completed);
