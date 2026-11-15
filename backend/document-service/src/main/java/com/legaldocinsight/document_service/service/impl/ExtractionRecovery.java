@@ -17,12 +17,14 @@ public class ExtractionRecovery {
     private final DocumentRepository documents;
     private final ExtractionOrchestrator orchestrator;
     private final TransactionTemplate transactions;
+    private final ParserProcess parser;
     private volatile boolean ready;
 
     // The supported deployment has one service instance; the previous instance
     // and its child processes must have stopped before startup recovery runs.
     @EventListener(ApplicationReadyEvent.class)
     public void recoverInterruptedWork() {
+        parser.reapStaleChildren();
         transactions.executeWithoutResult(status ->
             documents.resetInterrupted(DocumentStatus.PENDING, DocumentStatus.PROCESSING));
         ready = true;

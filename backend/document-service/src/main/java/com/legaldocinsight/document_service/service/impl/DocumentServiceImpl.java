@@ -18,7 +18,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.core.task.TaskRejectedException;
 import org.springframework.web.multipart.MultipartFile;
-import org.apache.tika.Tika;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -257,8 +256,8 @@ public class DocumentServiceImpl implements DocumentService {
             && ALLOWED_TYPES.get(1).equals(file.getContentType());
         if (!pdf && !docx) throw new InvalidFileException("File extension and type do not match");
         try (InputStream content = file.getInputStream()) {
-            String detected = new Tika().detect(content, name);
-            if (!file.getContentType().equals(detected)) {
+            byte[] expected = pdf ? new byte[] {'%', 'P', 'D', 'F', '-'} : new byte[] {'P', 'K', 3, 4};
+            if (!Arrays.equals(expected, content.readNBytes(expected.length))) {
                 throw new InvalidFileException("File contents do not match the claimed type");
             }
         } catch (IOException ex) {

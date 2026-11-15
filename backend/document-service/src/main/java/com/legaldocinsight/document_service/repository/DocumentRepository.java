@@ -28,4 +28,14 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
     @Query("update Document d set d.status = :pending where d.status = :processing")
     int resetInterrupted(@Param("pending") DocumentStatus pending,
                          @Param("processing") DocumentStatus processing);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update Document d set d.status = :terminal, d.extractedText = :text, "
+        + "d.pageCount = :pages, d.characterCount = :characters, d.errorCode = :code, "
+        + "d.errorMessage = :message, d.updatedAt = CURRENT_TIMESTAMP "
+        + "where d.id = :id and d.status = :processing")
+    int finishIfProcessing(@Param("id") String id, @Param("processing") DocumentStatus processing,
+        @Param("terminal") DocumentStatus terminal, @Param("text") String text,
+        @Param("pages") Integer pages, @Param("characters") Integer characters,
+        @Param("code") String code, @Param("message") String message);
 }

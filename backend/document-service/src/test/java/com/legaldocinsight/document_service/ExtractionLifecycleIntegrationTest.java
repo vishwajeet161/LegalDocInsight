@@ -7,6 +7,7 @@ import com.legaldocinsight.document_service.service.impl.ExtractionOrchestrator;
 import com.legaldocinsight.document_service.service.impl.TikaExtractionService;
 import com.legaldocinsight.document_service.service.impl.ExtractionRecovery;
 import com.legaldocinsight.document_service.service.impl.ClamAvScanner;
+import com.legaldocinsight.document_service.service.impl.ParserProcess;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -43,7 +44,7 @@ class ExtractionLifecycleIntegrationTest {
     @Autowired DocumentRepository documents;
     @Autowired ExtractionOrchestrator orchestrator;
     @Autowired ExtractionRecovery recovery;
-    @MockitoBean TikaExtractionService extractor;
+    @MockitoBean ParserProcess extractor;
     @MockitoBean ClamAvScanner scanner;
 
     @BeforeEach
@@ -66,8 +67,8 @@ class ExtractionLifecycleIntegrationTest {
             Files.writeString(file, "changed after scan");
             return ClamAvScanner.Result.CLEAN;
         });
-        when(extractor.extract(any(), any())).thenAnswer(invocation -> {
-            parsed.set(((InputStream) invocation.getArgument(0)).readAllBytes());
+        when(extractor.extract(any())).thenAnswer(invocation -> {
+            parsed.set(invocation.getArgument(0));
             return TikaExtractionService.ExtractionResult.builder()
                 .success(true).text("synthetic text").characterCount(14).pageCount(1).build();
         });
@@ -91,7 +92,7 @@ class ExtractionLifecycleIntegrationTest {
         var third = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         var started = new AtomicInteger();
-        when(extractor.extract(any(), any())).thenAnswer(invocation -> {
+        when(extractor.extract(any())).thenAnswer(invocation -> {
             if (started.incrementAndGet() <= 2) firstTwo.countDown();
             else third.countDown();
             if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("test timeout");
@@ -132,7 +133,7 @@ class ExtractionLifecycleIntegrationTest {
             .filePath(file.toString()).fileSize(Files.size(file)).fileType("application/pdf")
             .status(DocumentStatus.PENDING).build());
         when(scanner.scan(any())).thenReturn(scanResult);
-        when(extractor.extract(any(), any())).thenReturn(TikaExtractionService.ExtractionResult.builder()
+        when(extractor.extract(any())).thenReturn(TikaExtractionService.ExtractionResult.builder()
             .success(true).text("synthetic text").characterCount(14).pageCount(1).build());
         try {
             orchestrator.extractAsync(document.getId());
@@ -145,7 +146,7 @@ class ExtractionLifecycleIntegrationTest {
                 default -> "SCANNER_UNAVAILABLE";
             };
             assertEquals(expectedCode, documents.findById(document.getId()).orElseThrow().getErrorCode());
-            verify(extractor, never()).extract(any(), any());
+            verify(extractor, never()).extract(any());
         } finally {
             documents.deleteById(document.getId());
             Files.deleteIfExists(file);
@@ -164,7 +165,7 @@ class ExtractionLifecycleIntegrationTest {
         var secondParse = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         var calls = new AtomicInteger();
-        when(extractor.extract(any(), any())).thenAnswer(invocation -> {
+        when(extractor.extract(any())).thenAnswer(invocation -> {
             if (calls.incrementAndGet() > 1) secondParse.countDown();
             started.countDown();
             if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("test timeout");
@@ -194,7 +195,7 @@ class ExtractionLifecycleIntegrationTest {
             .originalFileName("synthetic.pdf").storedFileName("synthetic.pdf")
             .filePath(file.toString()).fileSize(Files.size(file)).fileType("application/pdf")
             .status(DocumentStatus.PROCESSING).build());
-        when(extractor.extract(any(), any())).thenReturn(TikaExtractionService.ExtractionResult.builder()
+        when(extractor.extract(any())).thenReturn(TikaExtractionService.ExtractionResult.builder()
             .success(true).text("synthetic text").characterCount(14).pageCount(1).build());
 
         recovery.recoverInterruptedWork();
@@ -218,7 +219,7 @@ class ExtractionLifecycleIntegrationTest {
             .status(DocumentStatus.PENDING).build());
         var started = new CountDownLatch(1);
         var release = new CountDownLatch(1);
-        when(extractor.extract(any(), any())).thenAnswer(invocation -> {
+        when(extractor.extract(any())).thenAnswer(invocation -> {
             started.countDown();
             if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("test timeout");
             return TikaExtractionService.ExtractionResult.builder()

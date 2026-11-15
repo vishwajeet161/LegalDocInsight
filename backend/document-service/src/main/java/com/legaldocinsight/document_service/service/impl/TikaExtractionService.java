@@ -6,12 +6,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.sax.BodyContentHandler;
-import org.springframework.stereotype.Service;
+import org.apache.tika.exception.EncryptedDocumentException;
+import org.apache.tika.exception.WriteLimitReachedException;
 
 import java.io.InputStream;
 
 @Slf4j
-@Service
 public class TikaExtractionService {
 
     private final AutoDetectParser parser = new AutoDetectParser();
@@ -43,9 +43,17 @@ public class TikaExtractionService {
             log.warn("Tika extraction failed");
             return ExtractionResult.builder()
                 .success(false)
-                .errorCode("EXTRACTION_FAILED")
+                .errorCode(failureCode(e))
                 .build();
         }
+    }
+
+    private static String failureCode(Exception exception) {
+        if (WriteLimitReachedException.isWriteLimitReached(exception)) return "OUTPUT_LIMIT_EXCEEDED";
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof EncryptedDocumentException) return "ENCRYPTED_DOCUMENT";
+        }
+        return "EXTRACTION_FAILED";
     }
 
     private Integer parsePageCount(Metadata metadata) {

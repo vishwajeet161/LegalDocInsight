@@ -1,5 +1,7 @@
 # Feature specification: anonymous private upload
 
+**Feature 2 work in progress:** Upload screening now checks the declared type, extension and bounded PDF/ZIP signature. DOCX structure is checked asynchronously in the parser child after scanning, so a ZIP with the right signature but invalid DOCX structure can receive `202` and subsequently reach `FAILED` rather than being rejected synchronously. This changes the synchronous content-detection behavior recorded below and must be reviewed alongside the Feature 2 specification.
+
 ## Goal and status
 
 - **Release feature:** 1 — buildable baseline and anonymous private upload.
