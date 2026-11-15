@@ -38,6 +38,7 @@
 **Files:** `entity/Document.java`, `repository/DocumentRepository.java`, `service/impl/ExtractionOrchestrator.java`, upload/controller configuration and lifecycle integration tests.
 
 - [ ] Test committed in-progress visibility with a blocked extractor, atomic single claim, bounded admission returning `503` with `Retry-After`, queue rejection without lost work, and guarded completion after delete.
+- Progress (2026-11-15): single-instance admission is serialized through transaction completion and counts persisted pending/processing rows; concurrent admission was tested with H2 and PostgreSQL. A real service process was killed during a paused scan and recovered. Guarded terminal-write races and other criteria still require the full planned checks.
 - [ ] Implement database-backed pending work and short claim/result transactions; retain the approved single-instance assumption. Reclaim interrupted jobs on startup only after the previous instance and its child processes have stopped. Keep a bounded executor and atomic capacity admission.
 - [ ] Test restart with pending and interrupted jobs, terminal persistence and simultaneous claim attempts against PostgreSQL; rerun document-service tests.
 
@@ -45,8 +46,9 @@
 
 **Files:** document-service scanner interface/adapter and configuration, scanner tests, approved deployment configuration.
 
-- [ ] Test clean, malware-positive, unavailable and timed-out scanner responses and assert no parsing follows a non-clean outcome; error codes and logs must be safe. **Progress:** The standalone ClamAV client has controlled TCP-daemon tests; integration with extraction remains.
+- [ ] Test clean, malware-positive, unavailable and timed-out scanner responses and assert no parsing follows a non-clean outcome; error codes and logs must be safe. **Progress:** The ClamAV client has controlled TCP-daemon tests and worker integration tests; a real-daemon detection and outage were also checked locally. Comprehensive log and failure checks remain.
 - [ ] Implement a bounded local scanner protocol and private daemon configuration with current signatures; fail closed in the public profile. Document explicit development behavior and ensure the daemon is not publicly exposed.
+- Progress (2026-11-15): the worker scans the same bounded bytes passed to extraction, with safe scanner failure codes. The local Compose scanner refreshes signatures at startup, sets scan-limit alerting, and has no published port. Real-daemon clean, antivirus test signature and oversized archive checks passed. Continuous signature freshness and all scanner-limit cases are not yet verified; no public profile is configured.
 - [ ] Run scanner tests and an integration check with the actual daemon, including outage and timeout.
 
 ## Task 4: Isolated, bounded parser
@@ -56,6 +58,7 @@
 - [ ] Identify and document a maintained compatible Tika version and a supported OS mechanism enforcing per-child memory, CPU and process limits; the public profile must refuse to parse when enforcement is unavailable.
 - [ ] Test text PDF/DOCX, blank/scanned/encrypted PDF, malformed DOCX, archive expansion/entry caps, unknown page count, output limit, crash and timeout; prove timeouts terminate and reap the child.
 - [ ] Implement the parser child and bounded output protocol; reject blank text and unsafe input, never return raw exceptions, and persist text/counts only on success.
+- Progress (2026-11-15): the existing in-process parser rejects blank text and limits extracted characters; unknown page counts are null. This is not the isolated parser required for public use.
 - [ ] Verify the actual resource boundary and run the document-service tests.
 
 ## Task 5: End-to-end and documentation
@@ -64,4 +67,5 @@
 
 - [ ] Run `./mvnw test` in document-service and `npm test -- --watch=false` and `npm run build` in frontend; record actual commands, test counts, failures and environmental blockers.
 - [ ] Run a synthetic PDF and DOCX through gateway with real scanner and isolated parser; test authorized/unauthorized polling and restart during queued/in-progress work. Record exact commands and outcomes.
+- Progress (2026-11-15): synthetic PDF and DOCX passed through the gateway and real scanner with authorized and unauthorized polling. A real process kill during a paused scan recovered the accepted job after restart. These checks used the in-process parser; the required isolated-boundary acceptance test remains open.
 - [ ] Update the specification, plan and relevant deployment/API documentation with implemented behavior, checks and any remaining limitations. Mark Feature 2 complete only if all acceptance criteria are observed.

@@ -17,7 +17,7 @@ public class TikaExtractionService {
     private final AutoDetectParser parser = new AutoDetectParser();
 
     public ExtractionResult extract(InputStream inputStream, String fileName) {
-        BodyContentHandler handler = new BodyContentHandler(-1); // -1 = no char limit
+        BodyContentHandler handler = new BodyContentHandler(1_000_000);
         Metadata metadata = new Metadata();
 
         try {
@@ -25,9 +25,12 @@ public class TikaExtractionService {
 
             String text = handler.toString().trim();
             int charCount = text.length();
-            int pageCount = parsePageCount(metadata);
+            Integer pageCount = parsePageCount(metadata);
 
-            log.info("Tika extraction complete: file={} chars={} pages={}", fileName, charCount, pageCount);
+            if (text.isBlank()) {
+                return ExtractionResult.builder().success(false).errorCode("EMPTY_TEXT").build();
+            }
+            log.info("Tika extraction complete: chars={} pages={}", charCount, pageCount);
 
             return ExtractionResult.builder()
                 .text(text)
@@ -37,24 +40,27 @@ public class TikaExtractionService {
                 .build();
 
         } catch (Exception e) {
-            log.error("Tika extraction failed: file={} error={}", fileName, e.getMessage(), e);
+            log.warn("Tika extraction failed");
             return ExtractionResult.builder()
                 .success(false)
-                .errorMessage(e.getMessage())
+                .errorCode("EXTRACTION_FAILED")
                 .build();
         }
     }
 
-    private int parsePageCount(Metadata metadata) {
+    private Integer parsePageCount(Metadata metadata) {
         String[] keys = {"xmpTPg:NPages", "meta:page-count", "Page-Count"};
         for (String key : keys) {
             String value = metadata.get(key);
             if (value != null) {
-                try { return Integer.parseInt(value.trim()); }
+                try {
+                    int count = Integer.parseInt(value.trim());
+                    if (count > 0) return count;
+                }
                 catch (NumberFormatException ignored) {}
             }
         }
-        return 0;
+        return null;
     }
 
     @Builder
@@ -62,8 +68,9 @@ public class TikaExtractionService {
     public static class ExtractionResult {
         private final String text;
         private final int characterCount;
-        private final int pageCount;
+        private final Integer pageCount;
         private final boolean success;
         private final String errorMessage;
+        private final String errorCode;
     }
 }

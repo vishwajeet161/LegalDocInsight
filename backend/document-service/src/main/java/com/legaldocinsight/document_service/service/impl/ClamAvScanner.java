@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.Executors;
@@ -15,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /** A bounded clamd INSTREAM client. The caller must provide a bounded local file stream. */
 public class ClamAvScanner {
-    public enum Result { CLEAN, INFECTED, UNAVAILABLE, TIMEOUT }
+    public enum Result { CLEAN, INFECTED, SCAN_LIMIT_EXCEEDED, UNAVAILABLE, TIMEOUT }
 
     private static final ScheduledExecutorService DEADLINES = Executors.newSingleThreadScheduledExecutor(task -> {
         var thread = new Thread(task, "scanner-deadlines");
@@ -70,8 +71,13 @@ public class ClamAvScanner {
                 if (next != 0) return Result.UNAVAILABLE;
                 String reply = response.toString(StandardCharsets.UTF_8);
                 if (reply.equals("stream: OK")) return Result.CLEAN;
+                if (reply.startsWith("stream: Heuristics.Limits.Exceeded") && reply.endsWith(" FOUND")) {
+                    return Result.SCAN_LIMIT_EXCEEDED;
+                }
                 if (reply.startsWith("stream: ") && reply.endsWith(" FOUND")) return Result.INFECTED;
                 return Result.UNAVAILABLE;
+            } catch (SocketTimeoutException ex) {
+                return Result.TIMEOUT;
             } catch (IOException ex) {
                 return expired.get() ? Result.TIMEOUT : Result.UNAVAILABLE;
             } finally {

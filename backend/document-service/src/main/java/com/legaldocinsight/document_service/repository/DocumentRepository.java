@@ -10,11 +10,13 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Pageable;
 
 import java.util.List;
+import java.util.Collection;
 
 @Repository
 public interface DocumentRepository extends JpaRepository<Document, String> {
     List<Document> findByUploadedByOrderByCreatedAtDesc(String uploadedBy);
     List<Document> findByStatus(DocumentStatus status);
+    long countByStatusIn(Collection<DocumentStatus> statuses);
     List<Document> findByStatusOrderByCreatedAtAsc(DocumentStatus status, Pageable pageable);
 
     @Modifying

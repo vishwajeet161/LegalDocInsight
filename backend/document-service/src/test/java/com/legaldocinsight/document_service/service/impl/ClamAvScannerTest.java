@@ -25,6 +25,12 @@ class ClamAvScannerTest {
     }
 
     @Test
+    void identifiesScanLimitAlertsSeparatelyFromMalware() throws Exception {
+        assertEquals("SCAN_LIMIT_EXCEEDED",
+            scanWithReply("stream: Heuristics.Limits.Exceeded.MaxScanSize FOUND\0").name());
+    }
+
+    @Test
     void daemonErrorsFailClosed() throws Exception {
         assertEquals(ClamAvScanner.Result.UNAVAILABLE, scanWithReply("stream: size limit ERROR\0"));
     }

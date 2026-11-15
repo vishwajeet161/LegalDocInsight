@@ -59,6 +59,8 @@ public class Document {
     @Column
     private String errorMessage;
 
+    private String errorCode;
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;
