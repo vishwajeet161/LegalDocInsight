@@ -61,6 +61,7 @@
 - Progress (2026-11-15): the existing in-process parser rejects blank text and limits extracted characters; unknown page counts are null. This is not the isolated parser required for public use.
 - Later progress (2026-11-15): extraction now uses a child process with a deadline, bounded protocol, archive entry/expansion checks and an optional cgroup-v2 boundary. Real kernel tests exercised the limits and cleanup. A newly added world-writable-cgroup test remains unrun and the corresponding permission check is missing; the public profile remains disabled. See the feature specification for the full handoff and outstanding cases.
 - Checkpoint (2026-11-16): real-kernel tests reproduced and then passed checks for writable delegation and visible ancestor membership permissions; all 13 cgroup tests passed. This is partial hardening, not a complete filesystem, network or cgroup namespace confinement. See the feature specification for verification details and remaining work.
+- Later checkpoint (2026-11-16): ZIP entries nested directly within ZIP entries now share the expansion and entry budgets and have a nesting-depth limit. Synthetic safe and excessive nested-ZIP cases cover this behavior; other archive formats and parser containment still require review.
 - [ ] Verify the actual resource boundary and run the document-service tests.
 
 ## Task 5: End-to-end and documentation

@@ -4,6 +4,9 @@ import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.FilterInputStream;
+import java.io.PushbackInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.zip.ZipInputStream;
 
@@ -64,27 +67,71 @@ public final class ParserChildMain {
     }
 
     private static String archiveFailure(byte[] bytes) throws IOException {
-        long expanded = 0;
-        int entries = 0;
+        var budget = new ArchiveBudget();
+        try (var zip = new ZipInputStream(new ByteArrayInputStream(bytes))) {
+            return inspectArchive(zip, budget, 0, true);
+        } catch (ArchiveLimitExceeded ex) {
+            return "UNSAFE_ARCHIVE";
+        }
+    }
+
+    private static String inspectArchive(ZipInputStream zip, ArchiveBudget budget, int depth, boolean docx)
+            throws IOException {
         boolean contentTypes = false;
         boolean documentXml = false;
         var names = new java.util.HashSet<String>();
         byte[] buffer = new byte[8192];
-        try (var zip = new ZipInputStream(new ByteArrayInputStream(bytes))) {
-            java.util.zip.ZipEntry entry;
-            while ((entry = zip.getNextEntry()) != null) {
-                if (++entries > 1000) return "UNSAFE_ARCHIVE";
-                if (!names.add(entry.getName())) return "MALFORMED_DOCUMENT";
-                contentTypes |= entry.getName().equals("[Content_Types].xml");
-                documentXml |= entry.getName().equals("word/document.xml");
-                int count;
-                while ((count = zip.read(buffer)) != -1) {
-                    expanded += count;
-                    if (expanded > 128L * 1024 * 1024) return "UNSAFE_ARCHIVE";
+        java.util.zip.ZipEntry entry;
+        while ((entry = zip.getNextEntry()) != null) {
+            if (++budget.entries > 1000) throw new ArchiveLimitExceeded();
+            if (!names.add(entry.getName())) return "MALFORMED_DOCUMENT";
+            contentTypes |= entry.getName().equals("[Content_Types].xml");
+            documentXml |= entry.getName().equals("word/document.xml");
+            var contents = new PushbackInputStream(new CountedEntryStream(zip, budget), 4);
+            byte[] signature = contents.readNBytes(4);
+            contents.unread(signature);
+            if (signature.length == 4 && signature[0] == 'P' && signature[1] == 'K'
+                    && signature[2] == 3 && signature[3] == 4) {
+                if (depth >= 4) throw new ArchiveLimitExceeded();
+                try (var nested = new ZipInputStream(new NonClosingStream(contents))) {
+                    String failure = inspectArchive(nested, budget, depth + 1, false);
+                    if (failure != null) return failure;
                 }
-                zip.closeEntry();
             }
+            while (contents.read(buffer) != -1) { /* Count and discard this entry. */ }
+            zip.closeEntry();
         }
-        return contentTypes && documentXml ? null : "MALFORMED_DOCUMENT";
+        return !docx || (contentTypes && documentXml) ? null : "MALFORMED_DOCUMENT";
+    }
+
+    private static final class ArchiveBudget {
+        private long expanded;
+        private int entries;
+    }
+
+    private static final class ArchiveLimitExceeded extends IOException { }
+
+    private static class NonClosingStream extends FilterInputStream {
+        NonClosingStream(InputStream input) { super(input); }
+        @Override public void close() { }
+    }
+
+    private static final class CountedEntryStream extends NonClosingStream {
+        private final ArchiveBudget budget;
+        CountedEntryStream(InputStream input, ArchiveBudget budget) {
+            super(input);
+            this.budget = budget;
+        }
+        @Override public int read(byte[] bytes, int offset, int length) throws IOException {
+            int count = in.read(bytes, offset, length);
+            if (count > 0 && (budget.expanded += count) > 128L * 1024 * 1024) {
+                throw new ArchiveLimitExceeded();
+            }
+            return count;
+        }
+        @Override public int read() throws IOException {
+            byte[] value = new byte[1];
+            return read(value, 0, 1) == -1 ? -1 : value[0] & 0xff;
+        }
     }
 }
