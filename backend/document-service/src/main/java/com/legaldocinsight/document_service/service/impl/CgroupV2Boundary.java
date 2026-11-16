@@ -50,10 +50,21 @@ final class CgroupV2Boundary implements AutoCloseable {
                 || !Files.getFileStore(root).type().equals("cgroup2") || !Files.isWritable(root)) {
             throw new IOException("A writable cgroup v2 delegation is required");
         }
-        if (((Number) Files.getAttribute(root, "unix:uid")).intValue() == 65534) {
-            throw new IOException("The parser identity must not own the delegated cgroup");
+        for (Path ancestor = root; ancestor != null && Files.getFileStore(ancestor).type().equals("cgroup2");
+                ancestor = ancestor.getParent()) {
+            requireRestrictedPermissions(ancestor);
+            requireRestrictedPermissions(ancestor.resolve("cgroup.procs"));
         }
         return root;
+    }
+
+    private static void requireRestrictedPermissions(Path path) throws IOException {
+        int owner = ((Number) Files.getAttribute(path, "unix:uid")).intValue();
+        int mode = ((Number) Files.getAttribute(path, "unix:mode")).intValue();
+        // Reject group writes conservatively, including effective POSIX ACL grants.
+        if (owner == 65534 || (mode & 0022) != 0) {
+            throw new IOException("Parser cgroup permissions are not restricted");
+        }
     }
 
     void attach(Process process) throws IOException {
