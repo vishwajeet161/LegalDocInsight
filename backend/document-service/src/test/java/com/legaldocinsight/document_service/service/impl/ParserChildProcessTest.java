@@ -85,6 +85,111 @@ class ParserChildProcessTest {
     }
 
     @Test
+    void childRejectsNestedZipThatExpandsPastTheLimit() throws Exception {
+        var nested = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(nested)) {
+            zip.putNextEntry(new ZipEntry("large.txt"));
+            byte[] block = new byte[64 * 1024];
+            for (int index = 0; index < 2049; index++) zip.write(block);
+            zip.closeEntry();
+        }
+        assertArchiveRejected(docxWithEmbeddedZip(nested.toByteArray()));
+    }
+
+    @Test
+    void childRejectsNestedZipWithTooManyEntries() throws Exception {
+        var nested = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(nested)) {
+            for (int index = 0; index < 1001; index++) {
+                zip.putNextEntry(new ZipEntry("entry-" + index));
+                zip.closeEntry();
+            }
+        }
+        assertArchiveRejected(docxWithEmbeddedZip(nested.toByteArray()));
+    }
+
+    @Test
+    void childRejectsNestedZipBeyondTheDepthLimit() throws Exception {
+        byte[] nested = "synthetic".getBytes(StandardCharsets.UTF_8);
+        for (int depth = 0; depth < 5; depth++) {
+            var bytes = new ByteArrayOutputStream();
+            try (var zip = new ZipOutputStream(bytes)) {
+                zip.putNextEntry(new ZipEntry("nested"));
+                zip.write(nested);
+                zip.closeEntry();
+            }
+            nested = bytes.toByteArray();
+        }
+        assertArchiveRejected(docxWithEmbeddedZip(nested));
+    }
+
+    @Test
+    void childCountsEntriesAcrossNestedArchives() throws Exception {
+        var branch = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(branch)) {
+            for (int index = 0; index < 500; index++) {
+                zip.putNextEntry(new ZipEntry("entry-" + index));
+                zip.closeEntry();
+            }
+        }
+        var nested = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(nested)) {
+            for (String name : new String[] {"first.zip", "second.zip"}) {
+                zip.putNextEntry(new ZipEntry(name));
+                zip.write(branch.toByteArray());
+                zip.closeEntry();
+            }
+        }
+        assertArchiveRejected(docxWithEmbeddedZip(nested.toByteArray()));
+    }
+
+    @Test
+    void childAcceptsDocxContainingSmallNestedZip() throws Exception {
+        var nested = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(nested)) {
+            zip.putNextEntry(new ZipEntry("note.txt"));
+            zip.write("synthetic attachment".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        byte[] fixture = docxWithEmbeddedZip(nested.toByteArray());
+        Process child = startChild();
+        try {
+            try (var input = new DataOutputStream(child.getOutputStream())) {
+                input.writeInt(fixture.length);
+                input.write(fixture);
+            }
+            assertTrue(child.waitFor(10, TimeUnit.SECONDS));
+            try (var response = new DataInputStream(child.getInputStream())) {
+                assertEquals(0x4c445031, response.readInt());
+                assertTrue(response.readBoolean());
+                assertEquals(-1, response.readInt());
+                int characters = response.readInt();
+                int length = response.readInt();
+                String text = new String(response.readNBytes(length), StandardCharsets.UTF_8);
+                assertEquals(text.length(), characters);
+                assertTrue(text.contains("Synthetic agreement"));
+            }
+        } finally {
+            child.destroyForcibly();
+        }
+    }
+
+    private static byte[] docxWithEmbeddedZip(byte[] nested) throws Exception {
+        var result = new ByteArrayOutputStream();
+        try (var document = new XWPFDocument()) {
+            document.createParagraph().createRun().setText("Synthetic agreement");
+            var part = document.getPackage().createPart(
+                org.apache.poi.openxml4j.opc.PackagingURIHelper.createPartName("/word/embeddings/synthetic.zip"),
+                "application/zip");
+            try (var output = part.getOutputStream()) {
+                output.write(nested);
+            }
+            document.write(result);
+        }
+        return result.toByteArray();
+    }
+
+    @Test
     void childRejectsAnOrdinaryZipThatIsNotADocx() throws Exception {
         var bytes = new ByteArrayOutputStream();
         try (var zip = new ZipOutputStream(bytes)) {
