@@ -75,6 +75,10 @@ final class CgroupV2Boundary implements AutoCloseable {
         }
     }
 
+    Path killFile() {
+        return directory.resolve("cgroup.kill");
+    }
+
     @Override
     public void close() throws IOException {
         write(directory.resolve("cgroup.kill"), "1");

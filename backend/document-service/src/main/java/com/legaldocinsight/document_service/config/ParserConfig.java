@@ -20,11 +20,16 @@ public class ParserConfig {
         command.add("-Xmx256m");
         boolean executableJar = ParserChildMain.class.getClassLoader().getClass().getName()
             .startsWith("org.springframework.boot.loader.launch.");
+        if (!cgroupRoot.isBlank() && !executableJar) {
+            throw new IllegalStateException("Parser isolation requires a packaged executable jar");
+        }
         if (executableJar) command.add("-Dloader.main=" + ParserChildMain.class.getName());
         command.add("-cp");
-        command.add(System.getProperty("java.class.path"));
+        String classPath = System.getProperty("java.class.path");
+        if (!cgroupRoot.isBlank()) classPath = Path.of(classPath).toAbsolutePath().normalize().toString();
+        command.add(classPath);
         command.add(executableJar ? "org.springframework.boot.loader.launch.PropertiesLauncher" : ParserChildMain.class.getName());
         return cgroupRoot.isBlank() ? new ParserProcess(command, Duration.ofMillis(timeoutMillis))
-            : new ParserProcess(command, Duration.ofMillis(timeoutMillis), Path.of(cgroupRoot));
+            : new ParserProcess(command, Duration.ofMillis(timeoutMillis), Path.of(cgroupRoot), Path.of(classPath));
     }
 }

@@ -34,6 +34,7 @@ services:
     # Refresh bundled signatures before clamd checks their age at startup.
     entrypoint: ["/bin/sh", "-c", "freshclam --stdout && exec /init"]
     environment:
+      TZ: UTC
       CLAMD_CONF_AlertExceedsMax: "yes"
       CLAMD_CONF_MaxScanSize: 128M
       CLAMD_CONF_MaxFileSize: 128M
