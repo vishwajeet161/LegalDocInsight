@@ -178,6 +178,47 @@ class ParserCgroupIntegrationTest {
     }
 
     @Test
+    void groupWritableDelegationIsRejectedBeforeStartingTheParser() throws Exception {
+        Path root = Path.of(System.getProperty("test.cgroup.root"));
+        var original = Files.getPosixFilePermissions(root);
+        try {
+            Files.setPosixFilePermissions(root, java.nio.file.attribute.PosixFilePermissions.fromString("rwxrwxr-x"));
+            var result = new ParserProcess(command(ProbeChild.class), Duration.ofSeconds(10), root).extract(new byte[] {1});
+            assertEquals("PARSER_ISOLATION_UNAVAILABLE", result.getErrorCode());
+        } finally {
+            Files.setPosixFilePermissions(root, original);
+        }
+    }
+
+    @Test
+    void worldWritableDelegationMembershipIsRejectedBeforeStartingTheParser() throws Exception {
+        Path root = Path.of(System.getProperty("test.cgroup.root"));
+        Path membership = root.resolve("cgroup.procs");
+        var original = Files.getPosixFilePermissions(membership);
+        try {
+            Files.setPosixFilePermissions(membership, java.nio.file.attribute.PosixFilePermissions.fromString("rw-rw-rw-"));
+            var result = new ParserProcess(command(ProbeChild.class), Duration.ofSeconds(10), root).extract(new byte[] {1});
+            assertEquals("PARSER_ISOLATION_UNAVAILABLE", result.getErrorCode());
+        } finally {
+            Files.setPosixFilePermissions(membership, original);
+        }
+    }
+
+    @Test
+    void worldWritableAncestorMembershipIsRejectedBeforeStartingTheParser() throws Exception {
+        Path root = Path.of(System.getProperty("test.cgroup.root"));
+        Path membership = root.getParent().resolve("cgroup.procs");
+        var original = Files.getPosixFilePermissions(membership);
+        try {
+            Files.setPosixFilePermissions(membership, java.nio.file.attribute.PosixFilePermissions.fromString("rw-rw-rw-"));
+            var result = new ParserProcess(command(ProbeChild.class), Duration.ofSeconds(10), root).extract(new byte[] {1});
+            assertEquals("PARSER_ISOLATION_UNAVAILABLE", result.getErrorCode());
+        } finally {
+            Files.setPosixFilePermissions(membership, original);
+        }
+    }
+
+    @Test
     void startupRecoveryKillsAndRemovesAStaleParserCgroup() throws Exception {
         Path root = Path.of(System.getProperty("test.cgroup.root"));
         var boundary = CgroupV2Boundary.create(root);
