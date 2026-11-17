@@ -44,6 +44,8 @@
 
 ## Feature 2 — Extraction and durable document status
 
+**Recovery update (2026-11-18):** An opt-in H2 process test passed using real local ClamAV through a test proxy that holds a clean scan response while the service is killed. Recovery rescanned and extracted the synthetic PDF; terminal work was not rescanned after a further restart. This does not verify an in-flight scanner computation, gateway upload, database restart or Linux isolation. The deferred local security review is tracked in [issue #16](https://github.com/vishwajeet161/LegalDocInsight/issues/16); it remains a release blocker.
+
 **Local safety update (2026-11-17):** Sanitized the optional publisher's failed-send log and added default-disabled, malformed scanner-reply and corrupted ZIP checks. The document-service suite passed 105 tests with 25 opt-in tests skipped; three separate real-ClamAV tests passed. The optional publisher still includes document data when explicitly enabled and must remain disabled for release. Archive, library-logging and scanner coverage is not exhaustive; host and combined-boundary acceptance remain open.
 
 **Local update (2026-11-17):** PDF OCR is explicitly disabled. An image-only synthetic PDF now reaches `FAILED`/`EMPTY_TEXT` through the worker and parser subprocess with a controlled clean scanner and no success event. The document-service suite passed 100 tests, 25 skipped. This is not a real-scanner, gateway or Linux isolation acceptance test.

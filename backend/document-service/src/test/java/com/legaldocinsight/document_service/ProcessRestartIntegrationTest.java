@@ -11,7 +11,10 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,7 +32,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Opt-in process crash test with a controlled scanner and H2 or dedicated PostgreSQL. */
+/** Opt-in crash test with a controlled scanner or real ClamAV through a test proxy. */
 @EnabledIfSystemProperty(named = "test.process.restart", matches = "true")
 class ProcessRestartIntegrationTest {
     @TempDir Path temp;
@@ -63,6 +66,8 @@ class ProcessRestartIntegrationTest {
         password = database == null ? System.getProperty("test.postgres.password", "") : "";
         var firstScan = new CountDownLatch(1);
         var scans = new AtomicInteger();
+        String realScannerHost = System.getProperty("test.process.clamav.host", "");
+        int realScannerPort = Integer.getInteger("test.process.clamav.port", 3310);
         Process service = null;
         try (var scanner = new ServerSocket(0)) {
             var scannerThread = new Thread(() -> {
@@ -74,16 +79,31 @@ class ProcessRestartIntegrationTest {
                             int b;
                             while ((b = input.read()) > 0) command.append((char) b);
                             if (command.toString().equals("zVERSION")) {
-                                String date = ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("EEE MMM d HH:mm:ss uuuu", Locale.US));
-                                socket.getOutputStream().write(("ClamAV test/1/" + date + "\0").getBytes(StandardCharsets.US_ASCII));
+                                if (!realScannerHost.isEmpty()) {
+                                    socket.getOutputStream().write(realScannerRequest(realScannerHost, realScannerPort, "zVERSION", null));
+                                } else {
+                                    String date = ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("EEE MMM d HH:mm:ss uuuu", Locale.US));
+                                    socket.getOutputStream().write(("ClamAV test/1/" + date + "\0").getBytes(StandardCharsets.US_ASCII));
+                                }
                             } else if (command.toString().equals("zINSTREAM")) {
+                                var documentBytes = new ByteArrayOutputStream();
                                 int size;
-                                while ((size = input.readInt()) != 0) input.skipNBytes(size);
+                                while ((size = input.readInt()) != 0) {
+                                    if (size < 0 || size > 10 * 1024 * 1024) throw new IllegalStateException("Invalid scan chunk");
+                                    byte[] chunk = input.readNBytes(size);
+                                    if (chunk.length != size) throw new IllegalStateException("Incomplete scan chunk");
+                                    documentBytes.write(chunk);
+                                }
+                                byte[] reply = realScannerHost.isEmpty() ? "stream: OK\0".getBytes(StandardCharsets.US_ASCII)
+                                    : realScannerRequest(realScannerHost, realScannerPort, "zINSTREAM", documentBytes.toByteArray());
+                                if (!java.util.Arrays.equals(reply, "stream: OK\0".getBytes(StandardCharsets.US_ASCII))) {
+                                    throw new IllegalStateException("Real scanner did not return clean");
+                                }
                                 if (scans.incrementAndGet() == 1) {
                                     firstScan.countDown();
                                     while (input.read() != -1) { }
                                 } else {
-                                    socket.getOutputStream().write("stream: OK\0".getBytes(StandardCharsets.US_ASCII));
+                                    socket.getOutputStream().write(reply);
                                 }
                             }
                         }
@@ -153,6 +173,27 @@ class ProcessRestartIntegrationTest {
                     delete.executeUpdate();
                 }
             }
+        }
+    }
+
+    private static byte[] realScannerRequest(String host, int port, String command, byte[] document) throws Exception {
+        try (var socket = new Socket(host, port)) {
+            socket.setSoTimeout(30_000);
+            var output = new DataOutputStream(socket.getOutputStream());
+            output.write((command + "\0").getBytes(StandardCharsets.US_ASCII));
+            if (document != null) {
+                output.writeInt(document.length);
+                output.write(document);
+                output.writeInt(0);
+            }
+            output.flush();
+            var reply = new ByteArrayOutputStream();
+            int value;
+            while ((value = socket.getInputStream().read()) != -1 && reply.size() < 1024) {
+                reply.write(value);
+                if (value == 0) return reply.toByteArray();
+            }
+            throw new IllegalStateException("Invalid real scanner response");
         }
     }
 
