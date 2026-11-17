@@ -33,7 +33,7 @@ public class JwtUtil {
                 .parseSignedClaims(token);
             return true;
         } catch (JwtException e) {
-            log.warn("Invalid JWT token: {}", e.getMessage());
+            log.warn("Invalid JWT token");
             return false;
         }
     }

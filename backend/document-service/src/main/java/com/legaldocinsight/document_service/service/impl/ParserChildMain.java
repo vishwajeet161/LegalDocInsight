@@ -68,8 +68,13 @@ public final class ParserChildMain {
 
     private static String archiveFailure(byte[] bytes) throws IOException {
         var budget = new ArchiveBudget();
-        try (var zip = new ZipInputStream(new ByteArrayInputStream(bytes))) {
-            return inspectArchive(zip, budget, 0, true);
+        var archive = new ArchiveTailStream(new ByteArrayInputStream(bytes));
+        try (var zip = new ZipInputStream(archive)) {
+            String failure = inspectArchive(zip, budget, 0, true);
+            if (failure != null) return failure;
+            byte[] buffer = new byte[8192];
+            while (archive.read(buffer) != -1) { /* Inspect bytes not read ahead by ZIP. */ }
+            return null;
         } catch (ArchiveLimitExceeded ex) {
             return "UNSAFE_ARCHIVE";
         }
@@ -93,12 +98,24 @@ public final class ParserChildMain {
             if (signature.length == 4 && signature[0] == 'P' && signature[1] == 'K'
                     && signature[2] == 3 && signature[3] == 4) {
                 if (depth >= 4) throw new ArchiveLimitExceeded();
-                try (var nested = new ZipInputStream(new NonClosingStream(contents))) {
+                var nestedContent = new ArchiveTailStream(contents);
+                try (var nested = new ZipInputStream(nestedContent)) {
                     String failure = inspectArchive(nested, budget, depth + 1, false);
                     if (failure != null) return failure;
                 }
+                while (nestedContent.read(buffer) != -1) { /* Count and inspect remaining entry bytes. */ }
+            } else {
+                // A ZIP after a prefix is not covered by the nested archive budget.
+                // Refuse it rather than guessing where the nested archive ends.
+                int window = 0;
+                int count;
+                while ((count = contents.read(buffer)) != -1) {
+                    for (int i = 0; i < count; i++) {
+                        window = (window << 8) | (buffer[i] & 0xff);
+                        if (window == 0x504b0304) return "UNSAFE_ARCHIVE";
+                    }
+                }
             }
-            while (contents.read(buffer) != -1) { /* Count and discard this entry. */ }
             zip.closeEntry();
         }
         return !docx || (contentTypes && documentXml) ? null : "MALFORMED_DOCUMENT";
@@ -114,6 +131,29 @@ public final class ParserChildMain {
     private static class NonClosingStream extends FilterInputStream {
         NonClosingStream(InputStream input) { super(input); }
         @Override public void close() { }
+    }
+
+    /** Detect a second ZIP even if ZipInputStream has read ahead into its tail. */
+    private static final class ArchiveTailStream extends NonClosingStream {
+        private int window;
+        private boolean sawEnd;
+
+        ArchiveTailStream(InputStream input) { super(input); }
+
+        @Override public int read(byte[] bytes, int offset, int length) throws IOException {
+            int count = in.read(bytes, offset, length);
+            for (int i = 0; i < count; i++) {
+                window = (window << 8) | (bytes[offset + i] & 0xff);
+                if (sawEnd && window == 0x504b0304) throw new ArchiveLimitExceeded();
+                if (window == 0x504b0506) sawEnd = true;
+            }
+            return count;
+        }
+
+        @Override public int read() throws IOException {
+            byte[] value = new byte[1];
+            return read(value, 0, 1) == -1 ? -1 : value[0] & 0xff;
+        }
     }
 
     private static final class CountedEntryStream extends NonClosingStream {

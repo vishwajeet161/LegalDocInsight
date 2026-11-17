@@ -24,6 +24,26 @@ class ClamAvDaemonIntegrationTest {
     }
 
     @Test
+    void detectsAntivirusTestSignatureInsideNestedArchives() throws Exception {
+        String eicar = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$" + "EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*";
+        var inner = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(inner)) {
+            zip.putNextEntry(new ZipEntry("synthetic.txt"));
+            zip.write(eicar.getBytes(StandardCharsets.US_ASCII));
+            zip.closeEntry();
+        }
+        var outer = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(outer)) {
+            zip.putNextEntry(new ZipEntry("nested.zip"));
+            zip.write(inner.toByteArray());
+            zip.closeEntry();
+        }
+        var scanner = new ClamAvScanner(System.getProperty("test.clamav.host"),
+            Integer.parseInt(System.getProperty("test.clamav.port", "3310")), Duration.ofSeconds(20));
+        assertEquals(ClamAvScanner.Result.INFECTED, scanner.scan(new ByteArrayInputStream(outer.toByteArray())));
+    }
+
+    @Test
     @EnabledIfSystemProperty(named = "test.clamav.limit-check", matches = "true")
     void failsClosedWhenConfiguredScanSizeIsExceeded() throws Exception {
         var archive = new ByteArrayOutputStream();

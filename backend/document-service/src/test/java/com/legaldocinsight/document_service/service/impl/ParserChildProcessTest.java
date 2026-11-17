@@ -102,6 +102,57 @@ class ParserChildProcessTest {
     }
 
     @Test
+    void childRejectsNestedZipHiddenBehindPrefixBytes() throws Exception {
+        var nested = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(nested)) {
+            zip.putNextEntry(new ZipEntry("synthetic.txt"));
+            zip.write("synthetic content".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        for (int prefixLength : new int[] {16, 8194}) {
+            var prefixed = new ByteArrayOutputStream();
+            prefixed.write(new byte[prefixLength]);
+            prefixed.write(nested.toByteArray());
+            assertArchiveRejected(docxWithEmbeddedZip(prefixed.toByteArray()));
+        }
+    }
+
+    @Test
+    void childRejectsASecondArchiveAppendedToANestedZip() throws Exception {
+        var first = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(first)) {
+            zip.putNextEntry(new ZipEntry("first.txt"));
+            zip.write("synthetic first archive".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        var second = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(second)) {
+            zip.putNextEntry(new ZipEntry("second.txt"));
+            zip.write("synthetic second archive".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        first.write(second.toByteArray());
+        assertArchiveRejected(docxWithEmbeddedZip(first.toByteArray()));
+    }
+
+    @Test
+    void childRejectsASecondArchiveAppendedToTheDocx() throws Exception {
+        var fixture = new ByteArrayOutputStream();
+        try (var document = new XWPFDocument()) {
+            document.createParagraph().createRun().setText("Synthetic agreement");
+            document.write(fixture);
+        }
+        var appended = new ByteArrayOutputStream();
+        try (var zip = new ZipOutputStream(appended)) {
+            zip.putNextEntry(new ZipEntry("synthetic.txt"));
+            zip.write("synthetic second archive".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        fixture.write(appended.toByteArray());
+        assertArchiveRejected(fixture.toByteArray());
+    }
+
+    @Test
     void childRejectsNestedZipWithTooManyEntries() throws Exception {
         var nested = new ByteArrayOutputStream();
         try (var zip = new ZipOutputStream(nested)) {
