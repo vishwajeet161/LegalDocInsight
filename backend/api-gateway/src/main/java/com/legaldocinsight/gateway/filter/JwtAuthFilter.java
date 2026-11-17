@@ -2,7 +2,6 @@ package com.legaldocinsight.gateway.filter;
 
 import com.legaldocinsight.gateway.util.JwtUtil;
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 // import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
@@ -43,17 +42,12 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         exchange.getAttributes().put(FILTER_APPLIED, true);
 
         ServerHttpRequest request = exchange.getRequest();
-        String path = request.getURI().getPath();
         String method = request.getMethod().name();
 
-        String correlationId = request.getHeaders().getFirst("X-Correlation-Id");
-        if (correlationId == null || correlationId.isBlank()) {
-            correlationId = UUID.randomUUID().toString();
-        }
+        String correlationId = UUID.randomUUID().toString();
 
         final String finalCorrelationId = correlationId;
-        MDC.put("correlationId", correlationId);
-        log.info("Incoming request: method={} path={} correlationId={}", method, path, correlationId);
+        log.info("Incoming request: method={} correlationId={}", method, correlationId);
 
         // Always allow OPTIONS (CORS preflight)
         if (method.equals("OPTIONS")) {
@@ -68,40 +62,39 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             .defaultIfEmpty(Optional.empty())
             .flatMap(matched -> {
                 if (matched.isEmpty()) {
-                    log.debug("No route matched for path={}, passing through", path);
-                    return chain.filter(exchange).doFinally(signal -> MDC.clear());
+                    log.debug("No route matched, passing through");
+                    return chain.filter(exchange);
                 }
                 var route = matched.get();
                 Object requiresAuth = route.getMetadata().getOrDefault("requiresAuth", true);
                 boolean isPublic = requiresAuth.toString().equalsIgnoreCase("false");
 
                 if (isPublic) {
-                    log.debug("Public route, skipping JWT: {}", path);
+                    log.debug("Public route, skipping JWT");
                     return proceedWithCorrelationId(exchange, chain, finalCorrelationId);
                 }
 
-                return authenticate(exchange, chain, request, path, finalCorrelationId);
+                return authenticate(exchange, chain, request, finalCorrelationId);
             });
     }
 
     private Mono<Void> authenticate(ServerWebExchange exchange, GatewayFilterChain chain,
-                                     ServerHttpRequest request, String path, String correlationId) {
+                                     ServerHttpRequest request, String correlationId) {
         String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            log.warn("Missing or malformed Authorization header for path={}", path);
+            log.warn("Missing or malformed Authorization header");
             return unauthorizedResponse(exchange, "Missing Authorization header");
         }
 
         String token = authHeader.substring(7);
         if (!jwtUtil.isTokenValid(token)) {
-            log.warn("Invalid JWT token for path={}", path);
+            log.warn("Invalid JWT token");
             return unauthorizedResponse(exchange, "Invalid or expired token");
         }
 
         String userId = jwtUtil.extractUserId(token);
         String role = jwtUtil.extractRole(token);
-        MDC.put("userId", userId);
-        log.info("Authenticated: userId={} role={} path={}", userId, role, path);
+        log.info("Authenticated request");
 
         ServerHttpRequest mutated = request.mutate()
             .header("X-Correlation-Id", correlationId)
@@ -109,8 +102,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             .header("X-User-Role", role)
             .build();
 
-        return chain.filter(exchange.mutate().request(mutated).build())
-            .doFinally(s -> MDC.clear());
+        return chain.filter(exchange.mutate().request(mutated).build());
     }
 
     private Mono<Void> proceedWithCorrelationId(ServerWebExchange exchange,
@@ -118,15 +110,13 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         ServerHttpRequest mutated = exchange.getRequest().mutate()
             .header("X-Correlation-Id", correlationId)
             .build();
-        return chain.filter(exchange.mutate().request(mutated).build())
-            .doFinally(s -> MDC.clear());
+        return chain.filter(exchange.mutate().request(mutated).build());
     }
 
     private Mono<Void> unauthorizedResponse(ServerWebExchange exchange, String message) {
         ServerHttpResponse response = exchange.getResponse();
         response.setStatusCode(HttpStatus.UNAUTHORIZED);
         response.getHeaders().add("Content-Type", "application/json");
-        MDC.clear();
         var body = String.format("{\"error\": \"Unauthorized\", \"message\": \"%s\"}", message);
         var buffer = response.bufferFactory().wrap(body.getBytes());
         return response.writeWith(Mono.just(buffer));

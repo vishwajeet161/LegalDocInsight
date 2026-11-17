@@ -20,8 +20,7 @@ public class GlobalExceptionHandler implements ErrorWebExceptionHandler {
     public Mono<Void> handle(ServerWebExchange exchange, Throwable ex) {
         
         if (exchange.getResponse().isCommitted()) {
-            log.debug("Response already committed, cannot write error for path={}",
-                exchange.getRequest().getURI().getPath());
+            log.debug("Response already committed, cannot write error");
             return Mono.empty();
         }
 
@@ -30,12 +29,11 @@ public class GlobalExceptionHandler implements ErrorWebExceptionHandler {
 
         if (ex instanceof ResponseStatusException rse) {
             status = HttpStatus.valueOf(rse.getStatusCode().value());
-            message = rse.getReason() != null ? rse.getReason() : "Request failed";
+            message = "Request failed";
         } else {
             status = HttpStatus.INTERNAL_SERVER_ERROR;
             message = "An unexpected error occurred";
-            log.error("Unhandled gateway exception for path={}: {}",
-                exchange.getRequest().getURI().getPath(), ex.getMessage(), ex);
+            log.error("Unhandled gateway exception while processing request");
         }
 
         exchange.getResponse().setStatusCode(status);

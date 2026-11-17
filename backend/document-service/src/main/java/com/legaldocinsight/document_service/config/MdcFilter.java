@@ -1,15 +1,13 @@
 package com.legaldocinsight.document_service.config;
 
 import jakarta.servlet.*;
-import jakarta.servlet.http.HttpServletRequest;
-import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.util.UUID;
 
-@Slf4j
 @Component
 @Order(1)
 public class MdcFilter implements Filter {
@@ -18,15 +16,7 @@ public class MdcFilter implements Filter {
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
             throws IOException, ServletException {
 
-        HttpServletRequest httpRequest = (HttpServletRequest) request;
-
-        String correlationId = httpRequest.getHeader("X-Correlation-Id");
-        String userId        = httpRequest.getHeader("X-User-Id");
-        String userRole      = httpRequest.getHeader("X-User-Role");
-
-        if (correlationId != null) MDC.put("correlationId", correlationId);
-        if (userId != null)        MDC.put("userId", userId);
-        if (userRole != null)      MDC.put("userRole", userRole);
+        MDC.put("correlationId", UUID.randomUUID().toString());
 
         try {
             chain.doFilter(request, response);
