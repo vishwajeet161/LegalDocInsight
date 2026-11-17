@@ -1,12 +1,20 @@
 import io
 import json
-import sys
+import argparse
+import subprocess
 import time
 import urllib.error
 import urllib.request
 import zipfile
 
-base = "http://127.0.0.1:" + sys.argv[1] + "/api/documents"
+parser = argparse.ArgumentParser(description="Exercise synthetic extraction through a local gateway")
+parser.add_argument("port", help="local gateway port")
+parser.add_argument("--restart-compose-file", help="dedicated test Compose file to recreate after extraction")
+parser.add_argument("--restart-compose-project", help="dedicated Compose project name")
+args = parser.parse_args()
+if bool(args.restart_compose_file) != bool(args.restart_compose_project):
+    parser.error("both restart Compose options must be supplied together")
+base = "http://127.0.0.1:" + args.port + "/api/documents"
 
 def pdf():
     stream = b"BT /F1 18 Tf 72 700 Td (Synthetic agreement) Tj ET"
@@ -102,10 +110,12 @@ def wait_for_failure(doc_id, token, expected):
 
 blank = pdf().replace(b"Synthetic agreement", b"                   ")
 doc_id, token = upload("blank.pdf", "application/pdf", blank)
+failed_ids = [doc_id]
 wait_for_failure(doc_id, token, "EMPTY_TEXT")
 
 doc_id, token = upload("malformed.docx",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document", b"PK\x03\x04not-a-docx")
+failed_ids.append(doc_id)
 wait_for_failure(doc_id, token, "MALFORMED_DOCUMENT")
 
 # The harmless standard antivirus test file is stored inside a synthetic DOCX ZIP.
@@ -115,4 +125,27 @@ with zipfile.ZipFile(infected, "a", zipfile.ZIP_DEFLATED) as archive:
     archive.writestr("word/embeddings/eicar.com", eicar)
 doc_id, token = upload("synthetic.docx",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document", infected.getvalue())
+failed_ids.append(doc_id)
 wait_for_failure(doc_id, token, "MALWARE_DETECTED")
+
+if args.restart_compose_file:
+    # Use only a dedicated synthetic test stack with services named db and document.
+    compose = ["docker", "compose", "-p", args.restart_compose_project,
+               "-f", args.restart_compose_file]
+    hashes = compose + ["exec", "-T", "document", "sh", "-c",
+                        "find /data -type f -exec sha256sum {} + | sort"]
+    before = subprocess.check_output(hashes)
+    for expected_id in [item[0] for item in uploaded] + failed_ids:
+        assert any(line.endswith(("/data/" + expected_id + extension).encode())
+                   for line in before.splitlines() for extension in (".pdf", ".docx")), \
+            "a synthetic original is missing from the test volume"
+    subprocess.run(compose + ["stop", "document", "db"], check=True)
+    subprocess.run(compose + ["up", "-d", "--force-recreate", "db", "document"], check=True)
+    assert subprocess.check_output(hashes) == before, "stored files changed across recreation"
+    for saved_id, saved_token in uploaded:
+        result = wait_for_extracted(saved_id, saved_token)
+        assert result["characterCount"] == 19
+        status, saved_text, _ = request("/" + saved_id + "/text", saved_token)
+        assert status == 200 and saved_text["extractedText"] == "Synthetic agreement"
+    wait_for_failure(doc_id, token, "MALWARE_DETECTED")
+    print("persistent database and document storage survived container recreation", flush=True)
