@@ -1,7 +1,6 @@
 package com.legaldocinsight.gateway.filter;
 
 import lombok.extern.slf4j.Slf4j;
-import org.slf4j.MDC;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -20,12 +19,6 @@ public class RequestLoggingFilter implements GlobalFilter, Ordered {
         ServerHttpRequest request = exchange.getRequest();
         long startTime = System.currentTimeMillis();
 
-        String correlationId = request.getHeaders().getFirst("X-Correlation-Id");
-        String userId = request.getHeaders().getFirst("X-User-Id");
-
-        if (correlationId != null) MDC.put("correlationId", correlationId);
-        if (userId != null) MDC.put("userId", userId);
-
         return chain.filter(exchange).doFinally(signalType -> {
             ServerHttpResponse response = exchange.getResponse();
             long duration = System.currentTimeMillis() - startTime;
@@ -36,19 +29,16 @@ public class RequestLoggingFilter implements GlobalFilter, Ordered {
 
             // Log at WARN level for 4xx/5xx, INFO for 2xx/3xx
             if (statusCode >= 400) {
-                log.warn("method={} path={} status={} duration={}ms",
+                log.warn("method={} status={} duration={}ms",
                     request.getMethod(),
-                    request.getURI().getPath(),
                     statusCode,
                     duration);
             } else {
-                log.info("method={} path={} status={} duration={}ms",
+                log.info("method={} status={} duration={}ms",
                     request.getMethod(),
-                    request.getURI().getPath(),
                     statusCode,
                     duration);
             }
-            MDC.clear();
         });
     }
 
