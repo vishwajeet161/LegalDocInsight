@@ -78,6 +78,42 @@ class ParserChildProcessTest {
     }
 
     @Test
+    void childRejectsArchiveEntryWithCorruptedCrc() throws Exception {
+        var bytes = new ByteArrayOutputStream();
+        byte[] contents = "synthetic data".getBytes(StandardCharsets.UTF_8);
+        var crc = new java.util.zip.CRC32();
+        crc.update(contents);
+        var entry = new ZipEntry("synthetic.txt");
+        entry.setMethod(ZipEntry.STORED);
+        entry.setSize(contents.length);
+        entry.setCompressedSize(contents.length);
+        entry.setCrc(crc.getValue());
+        try (var zip = new ZipOutputStream(bytes)) {
+            zip.putNextEntry(entry);
+            zip.write(contents);
+            zip.closeEntry();
+        }
+        byte[] fixture = bytes.toByteArray();
+        fixture[30 + "synthetic.txt".length()] ^= 1;
+        Process child = startChild();
+        try {
+            try (var input = new DataOutputStream(child.getOutputStream())) {
+                input.writeInt(fixture.length);
+                input.write(fixture);
+            }
+            assertTrue(child.waitFor(10, TimeUnit.SECONDS));
+            assertEquals(0, child.exitValue());
+            try (var response = new DataInputStream(child.getInputStream())) {
+                assertEquals(0x4c445031, response.readInt());
+                assertEquals(false, response.readBoolean());
+                assertEquals("MALFORMED_DOCUMENT", response.readUTF());
+            }
+        } finally {
+            child.destroyForcibly();
+        }
+    }
+
+    @Test
     void childRejectsAnArchiveThatExpandsPastTheLimit() throws Exception {
         var bytes = new ByteArrayOutputStream();
         try (var zip = new ZipOutputStream(bytes)) {

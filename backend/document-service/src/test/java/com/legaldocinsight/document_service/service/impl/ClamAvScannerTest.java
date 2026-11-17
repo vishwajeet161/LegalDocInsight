@@ -40,6 +40,18 @@ class ClamAvScannerTest {
     }
 
     @Test
+    void truncatedAndOversizedDaemonRepliesFailClosed() throws Exception {
+        assertEquals(ClamAvScanner.Result.UNAVAILABLE, scanWithReply("stream: OK"));
+        assertEquals(ClamAvScanner.Result.UNAVAILABLE, scanWithReply("x".repeat(1025) + "\0"));
+    }
+
+    @Test
+    void truncatedAndOversizedVersionRepliesFailClosed() throws Exception {
+        assertEquals(ClamAvScanner.Result.UNAVAILABLE, scanWithVersion("ClamAV 1.5.4/1/"));
+        assertEquals(ClamAvScanner.Result.UNAVAILABLE, scanWithVersion("x".repeat(1025) + "\0"));
+    }
+
+    @Test
     void unavailableDaemonFailsClosed() throws Exception {
         int port;
         try (var server = new ServerSocket(0)) { port = server.getLocalPort(); }

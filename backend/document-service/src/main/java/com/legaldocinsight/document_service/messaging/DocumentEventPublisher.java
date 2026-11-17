@@ -41,7 +41,7 @@ public class DocumentEventPublisher {
                 .whenComplete((result, ex) -> {
                     if (ex != null) {
                         log.error("Failed to publish DocumentExtractedEvent for documentId={} correlationId={}",
-                                event.documentId(), correlationId, ex);
+                                event.documentId(), correlationId);
                     } else {
                         log.info("Published DocumentExtractedEvent documentId={} partition={} offset={} correlationId={} topic={}",
                                 event.documentId(),
