@@ -6,7 +6,7 @@ LegalDocInsight is a work-in-progress application for analyzing legal documents.
 
 **The first release is in development, not yet implemented end to end.** The repository contains an Angular landing and upload interface, an API gateway, document upload and extraction code, and an analysis-service stub. Feature 1 implemented the initial Java 21 build repairs, anonymous access tokens and gateway upload limits; there is no completed analysis report or chat workflow.
 
-Anonymous access and rate limiting have initial implementations, but the complete first-release protections have not been verified. Malware scanning and isolated parsing remain planned. Do not deploy the current implementation as a public document-upload service.
+Anonymous access and rate limiting have initial implementations. Malware scanning and a parser subprocess with an experimental Linux resource boundary are implemented, but the complete first-release protections have not been verified. Do not deploy the current implementation as a public document-upload service.
 
 For the code-level findings, see [Current architecture](docs/CURRENT_ARCHITECTURE.md) and [Architecture gap analysis](docs/ARCHITECTURE_GAP_ANALYSIS.md).
 
@@ -101,7 +101,7 @@ docker compose -f compose.dev.yaml run --rm maven -pl api-gateway test
 docker compose -f compose.dev.yaml run --rm maven -pl document-service test
 ```
 
-The first command starts the local gateway, document service, PostgreSQL and a private ClamAV scanner. The scanner refreshes its signature database before starting, which needs network access; its x86 image uses emulation on Apple Silicon. The gateway listens on `127.0.0.1:8080`; analysis and the frontend are not started by this configuration. The database also binds to localhost and uses a development-only default password. Set `LEGALDOC_DEV_DB_PASSWORD`, `LEGALDOC_DEV_DB_PORT` or `LEGALDOC_DEV_GATEWAY_PORT` to override the local defaults. Compose creates persistent database, document and Maven-cache volumes. Use `docker compose -f compose.dev.yaml --profile app down` to stop the stack without deleting its volumes. This setup is for local development and is not a public deployment: the parser runs in a child process, but the local profile does not enforce the required OS resource boundary.
+The first command starts the local gateway, document service, PostgreSQL and a private ClamAV scanner. The scanner refreshes its signature database before starting, which needs network access; its x86 image uses emulation on Apple Silicon. Before each scan, document-service checks the daemon's loaded signature timestamp and fails closed if it is missing, in the future or more than seven days old. ClamAV's timestamp has no timezone, so the scanner container must run with `TZ=UTC`, as configured in Compose. The gateway listens on `127.0.0.1:8080`; analysis and the frontend are not started by this configuration. The database also binds to localhost and uses a development-only default password. Set `LEGALDOC_DEV_DB_PASSWORD`, `LEGALDOC_DEV_DB_PORT` or `LEGALDOC_DEV_GATEWAY_PORT` to override the local defaults. Compose creates persistent database, document and Maven-cache volumes. Use `docker compose -f compose.dev.yaml --profile app down` to stop the stack without deleting its volumes. This setup is for local development and is not a public deployment: the parser runs in a child process, but the local profile does not enforce the required OS resource boundary.
 
 ## Later possibilities
 

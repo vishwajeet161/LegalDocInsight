@@ -23,6 +23,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest(properties = {
     "spring.datasource.url=jdbc:h2:mem:documenttest;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
@@ -105,5 +106,27 @@ class DocumentUploadIntegrationTest {
         var file = new MockMultipartFile("file", "contract.docx",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document", bytes);
         mvc.perform(multipart("/api/documents/upload").file(file)).andExpect(status().isAccepted());
+    }
+
+    @Test
+    void uploadDebugLogsDoNotExposeTheStoragePath() throws Exception {
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(
+            com.legaldocinsight.document_service.service.impl.DocumentServiceImpl.class);
+        var previousLevel = logger.getLevel();
+        var captured = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        captured.start();
+        logger.addAppender(captured);
+        logger.setLevel(ch.qos.logback.classic.Level.DEBUG);
+        try {
+            var file = new MockMultipartFile("file", "synthetic.pdf", MediaType.APPLICATION_PDF_VALUE,
+                "%PDF-1.4\n%%EOF".getBytes(StandardCharsets.US_ASCII));
+            mvc.perform(multipart("/api/documents/upload").file(file)).andExpect(status().isAccepted());
+            assertTrue(captured.list.stream().noneMatch(event ->
+                event.getFormattedMessage().contains("legaldocinsight-integration-test")));
+        } finally {
+            logger.detachAppender(captured);
+            logger.setLevel(previousLevel);
+            captured.stop();
+        }
     }
 }

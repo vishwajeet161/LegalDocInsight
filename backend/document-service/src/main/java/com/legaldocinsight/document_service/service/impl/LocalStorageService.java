@@ -47,7 +47,7 @@ public class LocalStorageService implements StorageService {
         Path uploadPath = Paths.get(uploadDir);
         if (!Files.exists(uploadPath)) {
             Files.createDirectories(uploadPath);
-            log.info("Created upload directory: {}", uploadPath.toAbsolutePath());
+            log.info("Created upload directory");
         }
     }
 
@@ -67,7 +67,7 @@ public class LocalStorageService implements StorageService {
             Files.deleteIfExists(temporary);
         }
 
-        log.debug("Stored file: {} -> {}", file.getOriginalFilename(), destination.toAbsolutePath());
+        log.debug("Stored file: documentId={}", documentId);
         return destination.toString();
     }
 
@@ -81,7 +81,7 @@ public class LocalStorageService implements StorageService {
         Path path = Paths.get(filePath);
         if (Files.exists(path)) {
             Files.delete(path);
-            log.debug("Deleted file: {}", filePath);
+            log.debug("Deleted stored file");
         }
     }
 

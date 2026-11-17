@@ -3,8 +3,10 @@ package com.legaldocinsight.document_service.service.impl;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.time.Duration;
 import java.util.List;
 import java.util.ArrayList;
@@ -24,20 +26,31 @@ public final class ParserProcess {
     private final List<String> command;
     private final Duration timeout;
     private final Path cgroupRoot;
+    private final Path sandboxJar;
 
     public ParserProcess(List<String> command, Duration timeout) {
         this(command, timeout, null);
     }
 
     public ParserProcess(List<String> command, Duration timeout, Path cgroupRoot) {
+        this(command, timeout, cgroupRoot, null);
+    }
+
+    public ParserProcess(List<String> command, Duration timeout, Path cgroupRoot, Path sandboxJar) {
         if (command.isEmpty() || timeout.isNegative() || timeout.isZero()) throw new IllegalArgumentException("Invalid parser configuration");
+        if (sandboxJar != null && (cgroupRoot == null || !sandboxJar.isAbsolute()
+                || !command.contains(sandboxJar.toString()))) throw new IllegalArgumentException("Invalid parser sandbox configuration");
         this.command = List.copyOf(command);
         this.timeout = timeout;
         this.cgroupRoot = cgroupRoot;
+        this.sandboxJar = sandboxJar;
     }
 
     public TikaExtractionService.ExtractionResult extract(byte[] input) {
         if (input.length > MAX_INPUT) return failure("INPUT_LIMIT_EXCEEDED");
+        if (sandboxJar != null && (!Files.isExecutable(Path.of("/usr/bin/bwrap")) || !Files.isRegularFile(sandboxJar))) {
+            return failure("PARSER_ISOLATION_UNAVAILABLE");
+        }
         CgroupV2Boundary boundary = null;
         if (cgroupRoot != null) {
             try {
@@ -47,7 +60,7 @@ public final class ParserProcess {
             }
         }
         Process process = null;
-        ExecutorService pipes = Executors.newFixedThreadPool(2, task -> {
+        ExecutorService pipes = Executors.newFixedThreadPool(sandboxJar == null ? 2 : 3, task -> {
             Thread thread = new Thread(task, "parser-pipe");
             thread.setDaemon(true);
             return thread;
@@ -55,18 +68,44 @@ public final class ParserProcess {
         long deadline = System.nanoTime() + timeout.toNanos();
         try {
             var childCommand = new ArrayList<String>();
+            if (sandboxJar != null) {
+                // The gate prevents forks outside the cgroup. A separate watchdog holds
+                // the service's stderr pipe and kills the group if the service dies,
+                // including while bubblewrap is still installing parent-death handlers.
+                String gate = "killfile=$1; shift; IFS= read -r gate || exit 1; "
+                    + "(trap '' PIPE; while printf x >&2 2>/dev/null; do /bin/sleep 0.2; done; "
+                    + "printf 1 > \"$killfile\") & exec \"$@\" 2>/dev/null";
+                childCommand.addAll(List.of("/bin/sh", "-c", gate, "parser-gate", boundary.killFile().toString()));
+            }
             if (boundary != null) {
                 // Keep the parser from moving itself out of its cgroup or inheriting
                 // the service's privileges if untrusted input compromises it.
                 childCommand.addAll(List.of("/usr/bin/setpriv", "--reuid=65534", "--regid=65534",
                     "--clear-groups", "--inh-caps=-all", "--ambient-caps=-all",
-                    "--bounding-set=-all", "--no-new-privs", "--pdeathsig=KILL"));
+                    "--bounding-set=-all", "--no-new-privs"));
+                childCommand.add("--pdeathsig=KILL");
             }
-            childCommand.addAll(command);
-            var builder = new ProcessBuilder(childCommand).redirectError(ProcessBuilder.Redirect.DISCARD);
+            if (sandboxJar != null) {
+                String javaHome = System.getProperty("java.home");
+                childCommand.addAll(List.of("/usr/bin/bwrap", "--unshare-user", "--unshare-net", "--unshare-pid",
+                    "--unshare-ipc", "--unshare-uts", "--disable-userns", "--cap-drop", "ALL", "--die-with-parent",
+                    "--ro-bind", "/usr/lib", "/usr/lib", "--ro-bind-try", "/usr/lib64", "/usr/lib64",
+                    "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib64", "/lib64",
+                    "--ro-bind", javaHome, javaHome, "--ro-bind", sandboxJar.toString(), "/parser.jar",
+                    "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--chdir", "/tmp", "--clearenv", "--"));
+                for (String part : command) childCommand.add(part.equals(sandboxJar.toString()) ? "/parser.jar" : part);
+            } else {
+                childCommand.addAll(command);
+            }
+            var builder = new ProcessBuilder(childCommand);
+            if (sandboxJar == null) builder.redirectError(ProcessBuilder.Redirect.DISCARD);
             builder.environment().clear();
             process = builder.start();
             Process child = process;
+            if (sandboxJar != null) pipes.submit(() -> {
+                try (var errors = child.getErrorStream()) { errors.transferTo(OutputStream.nullOutputStream()); }
+                return null;
+            });
             if (boundary != null) {
                 try {
                     boundary.attach(child);
@@ -76,6 +115,7 @@ public final class ParserProcess {
             }
             var writer = pipes.submit(() -> {
                 try (var output = new DataOutputStream(child.getOutputStream())) {
+                    if (sandboxJar != null) output.writeByte('\n');
                     output.writeInt(input.length);
                     output.write(input);
                 }

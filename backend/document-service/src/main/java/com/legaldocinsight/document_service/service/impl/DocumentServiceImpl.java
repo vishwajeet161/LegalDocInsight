@@ -119,7 +119,7 @@ public class DocumentServiceImpl implements DocumentService {
                         try {
                             storageService.delete(filePath);
                         } catch (Exception ex) {
-                            log.error("Failed to remove file after rollback: documentId={}", documentId, ex);
+                            log.error("Failed to remove file after rollback: documentId={}", documentId);
                         }
                     }
                 }
@@ -127,9 +127,9 @@ public class DocumentServiceImpl implements DocumentService {
             document.setFilePath(filePath);
             document.setStoredFileName(documentId);
             documentRepository.save(document);
-            log.debug("File stored: documentId={} path={}", documentId, filePath);
+            log.debug("File stored: documentId={}", documentId);
         } catch (Exception e) {
-            log.error("Storage failed: documentId={} error={}", documentId, e.getMessage());
+            log.error("Storage failed: documentId={}", documentId);
             document.setStatus(DocumentStatus.FAILED);
             document.setErrorMessage("File storage failed: " + e.getMessage());
             documentRepository.save(document);

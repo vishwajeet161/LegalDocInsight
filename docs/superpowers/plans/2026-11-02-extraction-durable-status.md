@@ -16,6 +16,8 @@
 - Do not expose tokens, extracted text, raw errors, paths or sensitive filenames in logs or events; do not change existing service boundaries or replace Kafka.
 - Use synthetic fixtures and verify negative cases, authorization and recovery; do not represent local-only checks as public deployment verification.
 
+**Paused checkpoint (2026-11-16):** Scanner freshness, experimental namespace isolation, PostgreSQL concurrency tests and synthetic gateway/restart checks were added in progress. The latest privacy regression tests have not been run, and known raw path/exception logging remains. See the feature specification before continuing; do not mark the feature complete or enable the public profile yet.
+
 ## Review focus
 
 - Invalid or expired token on status/text: deny without revealing content (Task 1).
