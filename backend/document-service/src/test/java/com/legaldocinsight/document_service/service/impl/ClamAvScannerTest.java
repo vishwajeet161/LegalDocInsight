@@ -71,6 +71,42 @@ class ClamAvScannerTest {
     }
 
     @Test
+    void daemonThatStallsAfterFreshVersionTimesOutDuringScan() throws Exception {
+        var executor = Executors.newSingleThreadExecutor();
+        var scanStarted = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        try (var server = new ServerSocket(0)) {
+            var request = executor.submit(() -> {
+                try (var socket = server.accept(); var input = new DataInputStream(socket.getInputStream())) {
+                    assertEquals("zVERSION", readRecord(input));
+                    String date = ZonedDateTime.now(ZoneOffset.UTC).format(
+                        DateTimeFormatter.ofPattern("EEE MMM d HH:mm:ss uuuu", Locale.US));
+                    socket.getOutputStream().write(("ClamAV 1.5.4/1/" + date + "\0").getBytes(StandardCharsets.US_ASCII));
+                }
+                try (var socket = server.accept(); var input = new DataInputStream(socket.getInputStream())) {
+                    assertEquals("zINSTREAM", readRecord(input));
+                    int size = input.readInt();
+                    input.readNBytes(size);
+                    assertEquals(0, input.readInt());
+                    scanStarted.countDown();
+                    release.await(3, TimeUnit.SECONDS);
+                }
+                return null;
+            });
+            try {
+                var scanner = new ClamAvScanner("127.0.0.1", server.getLocalPort(), Duration.ofSeconds(1));
+                assertEquals(ClamAvScanner.Result.TIMEOUT, scanner.scan(input()));
+                assertEquals(0, scanStarted.getCount(), "scan request must have reached the daemon");
+            } finally {
+                release.countDown();
+            }
+            request.get(3, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void staleLoadedSignaturesFailClosedBeforeScanning() throws Exception {
         var executor = Executors.newSingleThreadExecutor();
         try (var server = new ServerSocket(0)) {
