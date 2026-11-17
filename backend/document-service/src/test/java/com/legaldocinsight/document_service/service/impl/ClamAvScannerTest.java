@@ -98,6 +98,43 @@ class ClamAvScannerTest {
     }
 
     @Test
+    void checksLoadedSignatureFreshnessAgainBeforeEachScan() throws Exception {
+        var executor = Executors.newSingleThreadExecutor();
+        try (var server = new ServerSocket(0)) {
+            server.setSoTimeout(2000);
+            var requests = executor.submit(() -> {
+                try (var socket = server.accept(); var input = new DataInputStream(socket.getInputStream())) {
+                    assertEquals("zVERSION", readRecord(input));
+                    String date = ZonedDateTime.now(ZoneOffset.UTC).format(
+                        DateTimeFormatter.ofPattern("EEE MMM d HH:mm:ss uuuu", Locale.US));
+                    socket.getOutputStream().write(("ClamAV 1.5.4/1/" + date + "\0").getBytes(StandardCharsets.US_ASCII));
+                }
+                try (var socket = server.accept(); var input = new DataInputStream(socket.getInputStream())) {
+                    assertEquals("zINSTREAM", readRecord(input));
+                    int size = input.readInt();
+                    input.readNBytes(size);
+                    assertEquals(0, input.readInt());
+                    socket.getOutputStream().write("stream: OK\0".getBytes(StandardCharsets.US_ASCII));
+                }
+                try (var socket = server.accept(); var input = new DataInputStream(socket.getInputStream())) {
+                    assertEquals("zVERSION", readRecord(input));
+                    socket.getOutputStream().write(
+                        "ClamAV 1.5.4/1/Mon Jan 01 00:00:00 2001\0".getBytes(StandardCharsets.US_ASCII));
+                }
+                return null;
+            });
+            var scanner = new ClamAvScanner("127.0.0.1", server.getLocalPort(), Duration.ofSeconds(2));
+            assertEquals(ClamAvScanner.Result.CLEAN, scanner.scan(input()));
+            assertEquals(ClamAvScanner.Result.UNAVAILABLE, scanner.scan(input()));
+            requests.get(3, TimeUnit.SECONDS);
+            server.setSoTimeout(200);
+            org.junit.jupiter.api.Assertions.assertThrows(java.net.SocketTimeoutException.class, server::accept);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void malformedSignatureVersionFailsClosed() throws Exception {
         assertEquals(ClamAvScanner.Result.UNAVAILABLE, scanWithVersion("ClamAV unknown\0"));
     }
