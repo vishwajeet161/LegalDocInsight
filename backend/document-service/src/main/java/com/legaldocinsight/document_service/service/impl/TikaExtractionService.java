@@ -5,11 +5,15 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.AutoDetectParser;
+import org.apache.tika.parser.ParseContext;
+import org.apache.tika.extractor.EmbeddedDocumentExtractor;
 import org.apache.tika.sax.BodyContentHandler;
 import org.apache.tika.exception.EncryptedDocumentException;
 import org.apache.tika.exception.WriteLimitReachedException;
 
 import java.io.InputStream;
+import java.io.IOException;
+import org.xml.sax.ContentHandler;
 
 @Slf4j
 public class TikaExtractionService {
@@ -19,9 +23,16 @@ public class TikaExtractionService {
     public ExtractionResult extract(InputStream inputStream, String fileName) {
         BodyContentHandler handler = new BodyContentHandler(1_000_000);
         Metadata metadata = new Metadata();
+        var embedded = new RejectEmbeddedContent();
+        var context = new ParseContext();
+        context.set(EmbeddedDocumentExtractor.class, embedded);
 
         try {
-            parser.parse(inputStream, handler, metadata);
+            parser.parse(inputStream, handler, metadata, context);
+
+            if (embedded.encountered) {
+                return ExtractionResult.builder().success(false).errorCode("UNSAFE_ARCHIVE").build();
+            }
 
             String text = handler.toString().trim();
             int charCount = text.length();
@@ -45,6 +56,22 @@ public class TikaExtractionService {
                 .success(false)
                 .errorCode(failureCode(e))
                 .build();
+        }
+    }
+
+    private static final class RejectEmbeddedContent implements EmbeddedDocumentExtractor {
+        private boolean encountered;
+
+        @Override
+        public boolean shouldParseEmbedded(Metadata metadata) {
+            encountered = true;
+            return false;
+        }
+
+        @Override
+        public void parseEmbedded(InputStream stream, ContentHandler handler, Metadata metadata,
+                                  boolean outputHtml) throws IOException {
+            throw new IOException("Embedded content is not supported");
         }
     }
 

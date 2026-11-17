@@ -17,6 +17,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ParserChildProcessTest {
     @Test
+    void childRejectsPdfWithEmbeddedFile() throws Exception {
+        assertArchiveRejected(TikaExtractionServiceTest.pdfWithEmbeddedFile());
+    }
+
+    @Test
     void childExtractsSyntheticDocxAndReportsUnknownPageCount() throws Exception {
         byte[] fixture;
         try (var document = new XWPFDocument(); var bytes = new ByteArrayOutputStream()) {

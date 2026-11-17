@@ -2,6 +2,13 @@ package com.legaldocinsight.document_service.service.impl;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.PDDocumentNameDictionary;
+import org.apache.pdfbox.pdmodel.PDEmbeddedFilesNameTreeNode;
+import org.apache.pdfbox.pdmodel.common.filespecification.PDComplexFileSpecification;
+import org.apache.pdfbox.pdmodel.common.filespecification.PDEmbeddedFile;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.apache.pdfbox.pdmodel.encryption.AccessPermission;
 import org.apache.pdfbox.pdmodel.encryption.StandardProtectionPolicy;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
@@ -17,6 +24,39 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TikaExtractionServiceTest {
     private final TikaExtractionService extractor = new TikaExtractionService();
+
+    @Test
+    void pdfWithEmbeddedFileDoesNotSucceedWithoutCheckingEmbeddedContent() throws Exception {
+        var result = extractor.extract(new ByteArrayInputStream(pdfWithEmbeddedFile()), "synthetic.pdf");
+        assertFalse(result.isSuccess());
+        assertEquals("UNSAFE_ARCHIVE", result.getErrorCode());
+    }
+
+    static byte[] pdfWithEmbeddedFile() throws Exception {
+        var output = new ByteArrayOutputStream();
+        try (var pdf = new PDDocument()) {
+            var page = new PDPage();
+            pdf.addPage(page);
+            try (var content = new PDPageContentStream(pdf, page)) {
+                content.beginText();
+                content.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                content.newLineAtOffset(40, 700);
+                content.showText("Synthetic agreement");
+                content.endText();
+            }
+            var file = new PDComplexFileSpecification();
+            file.setFile("attachment.txt");
+            file.setEmbeddedFile(new PDEmbeddedFile(pdf, new ByteArrayInputStream(
+                "synthetic embedded content".getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+            var tree = new PDEmbeddedFilesNameTreeNode();
+            tree.setNames(java.util.Map.of("attachment.txt", file));
+            var names = new PDDocumentNameDictionary(pdf.getDocumentCatalog());
+            names.setEmbeddedFiles(tree);
+            pdf.getDocumentCatalog().setNames(names);
+            pdf.save(output);
+        }
+        return output.toByteArray();
+    }
 
     @Test
     void emptyPdfIsNotReportedAsSuccessfulExtraction() throws Exception {
