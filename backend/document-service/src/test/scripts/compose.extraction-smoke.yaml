@@ -1,0 +1,51 @@
+# Synthetic local testing only; do not use with real documents or a real database.
+# The scanner must already run on the named external Docker network.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: synthetic_smoke
+      POSTGRES_USER: synthetic_smoke
+      POSTGRES_PASSWORD: local-test-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synthetic_smoke -d synthetic_smoke"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    volumes:
+      - restart-db:/var/lib/postgresql/data
+  document:
+    image: maven:3.9-eclipse-temurin-21
+    entrypoint: ["java", "-jar", "/app/document.jar"]
+    working_dir: /tmp
+    volumes:
+      - ../../../target/document-service-1.0.0-SNAPSHOT.jar:/app/document.jar:ro
+      - restart-files:/data
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      DOCUMENT_DB_URL: jdbc:postgresql://db:5432/synthetic_smoke
+      DOCUMENT_DB_USER: synthetic_smoke
+      DOCUMENT_DB_PASSWORD: local-test-only
+      DOCUMENT_STORAGE_DIR: /data
+      DOCUMENT_SCANNER_HOST: ${LEGALDOC_TEST_SCANNER_HOST:?Set LEGALDOC_TEST_SCANNER_HOST}
+    depends_on:
+      db:
+        condition: service_healthy
+  gateway:
+    image: maven:3.9-eclipse-temurin-21
+    entrypoint: ["java", "-jar", "/app/gateway.jar"]
+    working_dir: /tmp
+    volumes:
+      - ../../../../api-gateway/target/api-gateway-1.0.0-SNAPSHOT.jar:/app/gateway.jar:ro
+    ports:
+      - "127.0.0.1::8080"
+    environment:
+      DOCUMENT_SERVICE_URL: http://document:8081
+    depends_on: [document]
+networks:
+  default:
+    external: true
+    name: ${LEGALDOC_TEST_NETWORK:?Set LEGALDOC_TEST_NETWORK}
+volumes:
+  restart-db:
+  restart-files:
