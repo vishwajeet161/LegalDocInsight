@@ -21,6 +21,7 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -28,10 +29,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Opt-in process crash test; H2 and the scanner are deliberately test substitutes. */
+/** Opt-in process crash test with a controlled scanner and H2 or dedicated PostgreSQL. */
 @EnabledIfSystemProperty(named = "test.process.restart", matches = "true")
 class ProcessRestartIntegrationTest {
     @TempDir Path temp;
+    private final String id = UUID.randomUUID().toString();
+    private String username;
+    private String password;
 
     @Test
     void committedProcessingIsRecoveredAfterTheServiceIsKilledDuringScan() throws Exception {
@@ -48,8 +52,15 @@ class ProcessRestartIntegrationTest {
             }
             document.save(pdf.toFile());
         }
-        var database = Server.createTcpServer("-tcpPort", "0", "-ifNotExists").start();
-        String url = "jdbc:h2:tcp://localhost:" + database.getPort() + "/mem:restart;MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
+        String postgresUrl = System.getProperty("test.process.postgres.url", "");
+        if (!postgresUrl.isEmpty() && !postgresUrl.matches("jdbc:postgresql://[^/]+/legaldoc_feature2_test(?:\\?.*)?")) {
+            throw new IllegalArgumentException("PostgreSQL restart test requires the dedicated legaldoc_feature2_test database");
+        }
+        var database = postgresUrl.isEmpty() ? Server.createTcpServer("-tcpPort", "0", "-ifNotExists").start() : null;
+        String url = database == null ? postgresUrl
+            : "jdbc:h2:tcp://localhost:" + database.getPort() + "/mem:restart;MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
+        username = database == null ? System.getProperty("test.postgres.username", "postgres") : "sa";
+        password = database == null ? System.getProperty("test.postgres.password", "") : "";
         var firstScan = new CountDownLatch(1);
         var scans = new AtomicInteger();
         Process service = null;
@@ -86,15 +97,15 @@ class ProcessRestartIntegrationTest {
 
             service = startService(url, scanner.getLocalPort(), "first.log");
             await().atMost(Duration.ofSeconds(60)).ignoreExceptions().until(() -> {
-                try (var connection = DriverManager.getConnection(url, "sa", "");
+                try (var connection = DriverManager.getConnection(url, username, password);
                      var query = connection.createStatement();
                      var result = query.executeQuery("select count(*) from documents")) {
                     return result.next();
                 }
             });
-            try (var connection = DriverManager.getConnection(url, "sa", "");
+            try (var connection = DriverManager.getConnection(url, username, password);
                  var insert = connection.prepareStatement("insert into documents (id, original_file_name, stored_file_name, file_path, file_size, file_type, status, created_at) values (?, ?, ?, ?, ?, ?, 'PENDING', current_timestamp)")) {
-                insert.setString(1, "restart-test");
+                insert.setString(1, id);
                 insert.setString(2, "synthetic.pdf");
                 insert.setString(3, "synthetic.pdf");
                 insert.setString(4, pdf.toString());
@@ -111,11 +122,13 @@ class ProcessRestartIntegrationTest {
             service = startService(url, scanner.getLocalPort(), "second.log");
             await().atMost(Duration.ofSeconds(90)).ignoreExceptions().untilAsserted(() ->
                 assertEquals("EXTRACTED", status(url)));
-            try (var connection = DriverManager.getConnection(url, "sa", "");
-                 var query = connection.createStatement();
-                 var result = query.executeQuery("select extracted_text from documents where id='restart-test'")) {
-                assertTrue(result.next());
-                assertTrue(result.getString(1).contains("Synthetic agreement"));
+            try (var connection = DriverManager.getConnection(url, username, password);
+                 var query = connection.prepareStatement("select extracted_text from documents where id=?")) {
+                query.setString(1, id);
+                try (var result = query.executeQuery()) {
+                    assertTrue(result.next());
+                    assertTrue(result.getString(1).contains("Synthetic agreement"));
+                }
             }
             assertEquals(2, scans.get());
             service.destroyForcibly();
@@ -132,27 +145,39 @@ class ProcessRestartIntegrationTest {
                 service.destroyForcibly();
                 service.waitFor(10, TimeUnit.SECONDS);
             }
-            database.stop();
+            if (database != null) database.stop();
+            else {
+                try (var connection = DriverManager.getConnection(url, username, password);
+                     var delete = connection.prepareStatement("delete from documents where id=?")) {
+                    delete.setString(1, id);
+                    delete.executeUpdate();
+                }
+            }
         }
     }
 
     private Process startService(String url, int scannerPort, String log) throws Exception {
-        return new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+        var builder = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
             "-cp", System.getProperty("surefire.test.class.path"), DocumentServiceApplication.class.getName(),
             "--spring.main.web-application-type=none", "--spring.datasource.url=" + url,
-            "--spring.datasource.username=sa", "--spring.datasource.password=", "--spring.datasource.driver-class-name=org.h2.Driver",
+            "--spring.datasource.username=" + username,
+            "--spring.datasource.driver-class-name=" + (url.startsWith("jdbc:postgresql:") ? "org.postgresql.Driver" : "org.h2.Driver"),
             "--spring.jpa.hibernate.ddl-auto=update", "--storage.local.upload-dir=" + temp,
             "--document.scanner.port=" + scannerPort, "--document.scanner.timeout-ms=90000",
             "--document.extraction.recovery-delay-ms=100")
-            .redirectErrorStream(true).redirectOutput(temp.resolve(log).toFile()).start();
+            .redirectErrorStream(true).redirectOutput(temp.resolve(log).toFile());
+        builder.environment().put("SPRING_DATASOURCE_PASSWORD", password);
+        return builder.start();
     }
 
     private String status(String url) throws Exception {
-        try (var connection = DriverManager.getConnection(url, "sa", "");
-             var query = connection.createStatement();
-             var result = query.executeQuery("select status from documents where id='restart-test'")) {
-            assertTrue(result.next());
-            return result.getString(1);
+        try (var connection = DriverManager.getConnection(url, username, password);
+             var query = connection.prepareStatement("select status from documents where id=?")) {
+            query.setString(1, id);
+            try (var result = query.executeQuery()) {
+                assertTrue(result.next());
+                return result.getString(1);
+            }
         }
     }
 }
