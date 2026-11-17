@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
+import org.apache.tika.parser.pdf.PDFParserConfig;
 import org.apache.tika.extractor.EmbeddedDocumentExtractor;
 import org.apache.tika.sax.BodyContentHandler;
 import org.apache.tika.exception.EncryptedDocumentException;
@@ -26,6 +27,9 @@ public class TikaExtractionService {
         var embedded = new RejectEmbeddedContent();
         var context = new ParseContext();
         context.set(EmbeddedDocumentExtractor.class, embedded);
+        var pdfConfig = new PDFParserConfig();
+        pdfConfig.setOcrStrategy(PDFParserConfig.OCR_STRATEGY.NO_OCR);
+        context.set(PDFParserConfig.class, pdfConfig);
 
         try {
             parser.parse(inputStream, handler, metadata, context);
