@@ -44,7 +44,7 @@
 
 ## Feature 2 — Extraction and durable document status
 
-**Status (2026-11-16):** Feature 2 remains in progress. Scanner integration, single-instance admission, a parser subprocess and an experimental cgroup boundary have been implemented. Local kernel tests exercised resource limits, cleanup and selected delegation permission checks, but complete parser confinement, the gateway flow with the boundary, and other acceptance checks remain outstanding; the public profile is disabled. See the specification for exact checks and limitations.
+**Status (2026-11-17):** Feature 2 remains in progress. Scanner integration, single-instance admission, a parser subprocess and an experimental cgroup and namespace boundary have been implemented. Local checks have exercised the combined gateway flow and selected recovery and isolation cases, but the actual Linux host, deterministic restart, complete archive and scanner cases, and log-context privacy remain unverified; the public profile is disabled. Storage and exception logging were sanitized and the Java 21 suite passed 88 tests with 23 opt-in tests skipped. See the specification for exact checks and limitations.
 
 **Files:** Modify `ExtractionOrchestrator.java`, `TikaExtractionService.java`, `Document.java`, `DocumentRepository.java`, document DTO/controller, parser configuration/dependency and frontend status client. Add a scanner adapter and a local scanner deployment/configuration for the internet-facing profile. Create `TikaExtractionServiceTest.java`, `UploadScanTest.java`, `ExtractionLifecycleIntegrationTest.java`, and safe PDF/DOCX/adversarial fixtures under document-service `src/test/resources/`.
 
