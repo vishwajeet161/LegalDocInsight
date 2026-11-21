@@ -3,6 +3,8 @@ package com.legaldocinsight.document_service.controller;
 import com.legaldocinsight.document_service.dto.DocumentResponse;
 import com.legaldocinsight.document_service.dto.DocumentUploadResponse;
 import com.legaldocinsight.document_service.service.DocumentService;
+import com.legaldocinsight.document_service.client.AnalysisServiceClient;
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -20,6 +22,7 @@ public class DocumentController {
 
     private final DocumentService documentService;
     private final UploadCapacity uploadCapacity;
+    private final AnalysisServiceClient analysisServiceClient;
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<DocumentUploadResponse> uploadDocument(
@@ -51,6 +54,14 @@ public class DocumentController {
             @RequestHeader(value = "X-Document-Token", required = false) String token) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
             .body(documentService.getDocumentWithText(id, token));
+    }
+
+    @GetMapping("/{id}/report")
+    public ResponseEntity<JsonNode> getReport(@PathVariable String id,
+            @RequestHeader(value = "X-Document-Token", required = false) String token) {
+        documentService.getDocument(id, token);
+        ResponseEntity<JsonNode> result = analysisServiceClient.report(id);
+        return ResponseEntity.status(result.getStatusCode()).cacheControl(CacheControl.noStore()).body(result.getBody());
     }
 
     @DeleteMapping("/{id}")

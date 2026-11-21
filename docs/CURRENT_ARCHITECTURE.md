@@ -1,6 +1,6 @@
 # Current architecture (repository inspection, 2026-11-01)
 
-**Historical snapshot:** This discovery predates Feature 1 and is not a current inventory. In the checked-out Feature 1 implementation, local Compose configuration, token-protected document access, upload validation and gateway limits exist; extraction remains in-process and lacks restart recovery and scanning. See the [Feature 1 specification](features/01-anonymous-private-upload.md) and the [Feature 2 draft](features/02-extraction-durable-status.md) for later findings and verification limits.
+**Historical snapshot:** This discovery predates Feature 1 and is not a current inventory. See the [Feature 1 specification](features/01-anonymous-private-upload.md), [Feature 2 specification](features/02-extraction-durable-status.md), and [Feature 3 specification](features/03-analysis-api-report-persistence.md) for subsequent implementation and verification limits. Feature 3 adds a private analysis API and report proxy; a real model and automatic handoff remain future work.
 
 ## Scope and evidence
 

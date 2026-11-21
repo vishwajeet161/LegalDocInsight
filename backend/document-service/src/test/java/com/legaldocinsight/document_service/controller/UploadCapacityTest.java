@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
 import com.legaldocinsight.document_service.service.DocumentService;
+import com.legaldocinsight.document_service.client.AnalysisServiceClient;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,7 +26,7 @@ class UploadCapacityTest {
     void controllerReturnsRetryableUnavailableWhenUploadCapacityIsFull() {
         var capacity = new UploadCapacity(1);
         assertTrue(capacity.tryAcquire());
-        var controller = new DocumentController(mock(DocumentService.class), capacity);
+        var controller = new DocumentController(mock(DocumentService.class), capacity, mock(AnalysisServiceClient.class));
         var file = new MockMultipartFile("file", "contract.pdf", "application/pdf", new byte[]{1});
 
         var response = controller.uploadDocument(file);

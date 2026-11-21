@@ -43,4 +43,10 @@ class GatewayForwardingTest {
             .bodyValue("synthetic").exchange().expectStatus().isOk();
         assertEquals(1, CALLS.get());
     }
+
+    @Test
+    void analysisEndpointIsNotPubliclyRouted() {
+        WebTestClient.bindToServer().baseUrl("http://127.0.0.1:" + port).build()
+            .get().uri("/api/analysis/reports/example").exchange().expectStatus().is4xxClientError();
+    }
 }

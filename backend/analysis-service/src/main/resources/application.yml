@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: analysis-service
+  datasource:
+    url: ${ANALYSIS_DB_URL:jdbc:postgresql://localhost:5432/legaldoc_dev}
+    username: ${ANALYSIS_DB_USER:legaldoc_dev}
+    password: ${ANALYSIS_DB_PASSWORD:}
+  sql:
+    init:
+      mode: always
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+server:
+  port: 8082
+analysis:
+  internal-token: ${ANALYSIS_INTERNAL_TOKEN:}
