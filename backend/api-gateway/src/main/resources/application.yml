@@ -36,19 +36,6 @@ spring:
           metadata:
             requiresAuth: false
 
-        # Analysis Service
-        - id: analysis-service
-          uri: ${ANALYSIS_SERVICE_URL:http://localhost:8082}
-          predicates:
-            - Path=/api/analysis/**
-          filters:
-            - name: CircuitBreaker
-              args:
-                name: analysisServiceCB
-                fallbackUri: forward:/fallback/analysis
-          metadata:
-            requiresAuth: false
-
         # Chat Service
         - id: chat-service
           uri: ${CHAT_SERVICE_URL:http://localhost:8083}
@@ -71,7 +58,6 @@ jwt:
   expiration: ${JWT_EXPIRATION:86400000}
 
 public-endpoints:
-  - /api/analysis/**
   - /api/documents/**
   - /api/auth/login
   - /api/auth/register

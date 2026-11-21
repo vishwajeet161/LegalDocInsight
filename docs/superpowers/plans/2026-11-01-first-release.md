@@ -64,6 +64,8 @@
 
 ## Feature 3 — Analysis API and report persistence
 
+**Status (2026-11-21):** In progress. The private API, database tables, transactional report store and token-gated document proxy have initial tests, including PostgreSQL duplicate submissions and database restart persistence. A full cross-service HTTP and service-restart verification remains open. See [Feature 3 specification](../../features/03-analysis-api-report-persistence.md). Feature 2's release blockers and disabled public profile remain unchanged.
+
 **Files:** Replace analysis stub controller; create analysis request/result DTOs, `AnalysisJob` and `AnalysisReport` entities/repositories, migrations/config and `AnalysisControllerIntegrationTest.java`, `AnalysisRepositoryTest.java` under analysis-service `src/test/`. Add a token-protected report endpoint and internal analysis client to document-service, with `DocumentReportAccessIntegrationTest.java`.
 
 **Contract:** Internal `POST /internal/analyses` accepts document ID, content hash and bounded extracted text from an authenticated service caller; duplicate `(documentId, contentHash, analysisVersion)` requests return the existing job. Analysis-service exposes no public report endpoint. `GET /api/documents/{id}/report` first verifies the anonymous access token in document-service, then fetches the report internally; it returns `404` before creation and `202` while processing. Report schema includes summary, clauses, obligations, risks, evidence references, law observations, model ID and prompt version.
