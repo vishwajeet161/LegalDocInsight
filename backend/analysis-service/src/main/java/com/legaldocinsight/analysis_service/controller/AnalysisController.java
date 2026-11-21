@@ -8,6 +8,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.*;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -24,11 +26,17 @@ public class AnalysisController {
     private final JdbcTemplate db;
     private final ObjectMapper json;
     private final byte[] credential;
+    private final int capacity;
+    private final TransactionTemplate transactions;
 
-    public AnalysisController(JdbcTemplate db, ObjectMapper json, @Value("${analysis.internal-token:}") String credential) {
+    public AnalysisController(JdbcTemplate db, ObjectMapper json, @Value("${analysis.internal-token:}") String credential,
+                              @Value("${analysis.queue-capacity:50}") int capacity, PlatformTransactionManager manager) {
+        if (capacity < 1) throw new IllegalArgumentException("Invalid analysis queue capacity");
         this.db = db;
         this.json = json;
         this.credential = credential.getBytes(StandardCharsets.UTF_8);
+        this.capacity = capacity;
+        this.transactions = new TransactionTemplate(manager);
     }
     public record Request(String documentId, String contentHash, String analysisVersion, String text) { }
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -37,19 +45,27 @@ public class AnalysisController {
         return credential.length >= 32 && supplied != null && MessageDigest.isEqual(credential, supplied.getBytes(StandardCharsets.UTF_8));
     }
     @PostMapping
-    public ResponseEntity<?> submit(@RequestHeader(value="X-Internal-Token", required=false) String token, @RequestBody Request request) throws Exception {
+    public synchronized ResponseEntity<?> submit(@RequestHeader(value="X-Internal-Token", required=false) String token, @RequestBody Request request) throws Exception {
         if (!authorized(token)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         if (request.documentId() == null || request.contentHash() == null || request.analysisVersion() == null || request.text() == null)
             return ResponseEntity.badRequest().build();
         try {
             if (!UUID.fromString(request.documentId()).toString().equals(request.documentId())) return ResponseEntity.badRequest().build();
         } catch (IllegalArgumentException ex) { return ResponseEntity.badRequest().build(); }
+        if (db.queryForObject("SELECT count(*) FROM analysis_deleted_documents WHERE document_id=?", Integer.class, request.documentId()) > 0)
+            return ResponseEntity.status(HttpStatus.GONE).cacheControl(CacheControl.noStore()).build();
         byte[] bytes = request.text().getBytes(StandardCharsets.UTF_8);
         if (bytes.length == 0 || bytes.length > MAX_TEXT_BYTES || request.text().isBlank()
                 || !request.analysisVersion().matches("[A-Za-z0-9._-]{1,64}")
                 || !request.contentHash().matches("[0-9a-f]{64}")
                 || !request.contentHash().equals(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))))
             return ResponseEntity.badRequest().build();
+        var existing = db.queryForList("SELECT id FROM analysis_jobs WHERE document_id=? AND content_hash=? AND analysis_version=?", String.class,
+                request.documentId(), request.contentHash(), request.analysisVersion());
+        if (!existing.isEmpty()) return ResponseEntity.accepted().cacheControl(CacheControl.noStore()).body(Map.of("jobId", existing.get(0)));
+        Long queued = db.queryForObject("SELECT count(*) FROM analysis_jobs WHERE status IN ('PENDING','PROCESSING')", Long.class);
+        if (queued == null || queued >= capacity)
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header("Retry-After", "5").cacheControl(CacheControl.noStore()).build();
         String id = UUID.randomUUID().toString();
         try {
             db.update("INSERT INTO analysis_jobs (id, document_id, content_hash, analysis_version, extracted_text, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -59,6 +75,20 @@ public class AnalysisController {
                     request.documentId(), request.contentHash(), request.analysisVersion());
         }
         return ResponseEntity.accepted().cacheControl(CacheControl.noStore()).body(Map.of("jobId", id));
+    }
+    @DeleteMapping("/documents/{documentId}")
+    public synchronized ResponseEntity<Void> delete(@RequestHeader(value="X-Internal-Token", required=false) String token, @PathVariable String documentId) {
+        if (!authorized(token)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        try {
+            if (!UUID.fromString(documentId).toString().equals(documentId)) return ResponseEntity.badRequest().build();
+        } catch (IllegalArgumentException ex) { return ResponseEntity.badRequest().build(); }
+        transactions.executeWithoutResult(status -> {
+            if (db.queryForObject("SELECT count(*) FROM analysis_deleted_documents WHERE document_id=?", Integer.class, documentId) == 0)
+                db.update("INSERT INTO analysis_deleted_documents(document_id, deleted_at) VALUES (?, ?)", documentId, Timestamp.from(Instant.now()));
+            db.update("DELETE FROM analysis_reports WHERE job_id IN (SELECT id FROM analysis_jobs WHERE document_id=?)", documentId);
+            db.update("DELETE FROM analysis_jobs WHERE document_id=?", documentId);
+        });
+        return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }
     @GetMapping("/documents/{documentId}/report")
     public ResponseEntity<?> report(@RequestHeader(value="X-Internal-Token", required=false) String token, @PathVariable String documentId) throws Exception {

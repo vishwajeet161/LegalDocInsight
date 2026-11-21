@@ -88,7 +88,7 @@ public class ExtractionOrchestrator {
                 success ? extraction.getText() : null, success ? extraction.getPageCount() : null,
                 success ? extraction.getCharacterCount() : null,
                 success ? null : (safeFailureCode != null ? safeFailureCode : "INTERNAL_ERROR"),
-                success ? null : "Text extraction failed.");
+                success ? null : "Text extraction failed.", success ? "PENDING" : null);
             return updated == 1 ? documentRepository.findById(documentId).orElse(null) : null;
         });
         if (completed != null && completed.getStatus() == DocumentStatus.EXTRACTED) {

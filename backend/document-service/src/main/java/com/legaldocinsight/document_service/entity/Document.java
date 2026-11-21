@@ -44,6 +44,10 @@ public class Document {
 
     private Integer characterCount;
 
+    private String analysisDeliveryStatus;
+    private Integer analysisDeliveryAttempts;
+    private Instant analysisNextAttemptAt;
+
     private String accessTokenHash;
 
     private Instant accessTokenExpiresAt;

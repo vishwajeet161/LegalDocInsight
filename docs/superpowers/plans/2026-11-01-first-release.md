@@ -78,6 +78,8 @@
 
 ## Feature 4 — LLM analysis and reliable handoff
 
+**Status (2026-11-21):** In progress. Opt-in handoff and worker, persisted retry delays and initial deletion protections are implemented. A synthetic DOCX was exercised through gateway, extraction, PostgreSQL, HTTP handoff and a controlled model endpoint, including analysis-process interruption and restart. The provider and model are undecided; a real-model run, additional recovery/deletion coverage and release safety work remain open. See the [Feature 4 specification](../../features/04-llm-analysis-reliable-handoff.md).
+
 **Files:** Create an analysis-service model-client interface and Ollama-compatible HTTP implementation, prompt/schema validator, chunk/coverage selector, worker and tests such as `ModelClientTest.java`, `ReportValidationTest.java`, `AnalysisWorkerIntegrationTest.java`. Modify document-service orchestration/client and add `AnalysisHandoffIntegrationTest.java`. Add config values for model URL/name/timeouts and prompt version.
 
 **Contract:** After extraction, document-service submits bounded text to analysis-service over an authenticated internal channel. Record delivery state and retry transient failures; analysis is idempotent. A global queue cap and model-concurrency cap reject excess work with a safe, retryable response rather than exhaust the host. Analysis-service calls the configured model, validates structured output and document evidence IDs, persists report or safe failure, and records source coverage. No full text is put into Kafka. Model unavailability and malformed output are visible, retryable failures.
