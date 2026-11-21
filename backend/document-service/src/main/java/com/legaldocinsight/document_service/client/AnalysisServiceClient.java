@@ -63,6 +63,25 @@ public class AnalysisServiceClient {
         }
     }
 
+    public ResponseEntity<Void> delete(String documentId) {
+        if (token.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 32) return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        try {
+            String id = UUID.fromString(documentId).toString();
+            var request = HttpRequest.newBuilder(URI.create(baseUrl + "/internal/analyses/documents/" + id))
+                .timeout(Duration.ofSeconds(5)).header("X-Internal-Token", token).DELETE().build();
+            var pending = http.sendAsync(request, info -> new LimitedBody());
+            try {
+                return pending.get(5, TimeUnit.SECONDS).statusCode() == 204
+                    ? ResponseEntity.noContent().build() : ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+            } finally { if (!pending.isDone()) pending.cancel(true); }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
+    }
+
     public ResponseEntity<JsonNode> report(String documentId) {
         if (token.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 32) return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         try {

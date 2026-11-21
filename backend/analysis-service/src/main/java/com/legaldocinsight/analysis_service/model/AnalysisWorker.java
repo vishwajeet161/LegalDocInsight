@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.legaldocinsight.analysis_service.persistence.AnalysisReportStore;
 import org.springframework.jdbc.core.JdbcTemplate;
+import java.sql.Timestamp;
+import java.time.Instant;
 
 /** Processes a single claimed job; scheduling and recovery are separate responsibilities. */
 public final class AnalysisWorker {
@@ -27,7 +29,7 @@ public final class AnalysisWorker {
     }
 
     public boolean process(String jobId) {
-        if (db.update("UPDATE analysis_jobs SET status='PROCESSING' WHERE id=? AND status='PENDING'", jobId) != 1) return false;
+        if (db.update("UPDATE analysis_jobs SET status='PROCESSING' WHERE id=? AND status='PENDING' AND (next_attempt_at IS NULL OR next_attempt_at<=?)", jobId, Timestamp.from(Instant.now())) != 1) return false;
         try {
             String text = db.queryForObject("SELECT extracted_text FROM analysis_jobs WHERE id=? AND status='PROCESSING'", String.class, jobId);
             var selection = ReportEvidence.select(text, passageLimit, maxPassages);
@@ -35,7 +37,18 @@ public final class AnalysisWorker {
                 + "{text, evidence:[passage IDs]}, and arrays clauses, obligations and risks containing objects of the same shape. "
                 + "Every finding needs at least one supplied passage ID. Return lawObservations as an empty array. Passages: "
                 + json.writeValueAsString(selection.passages());
-            JsonNode result = model.generate(prompt);
+            JsonNode result;
+            try { result = model.generate(prompt); }
+            catch (Exception unavailable) {
+                var attempts = db.queryForObject("SELECT attempt_count FROM analysis_jobs WHERE id=?", Integer.class, jobId);
+                int next = attempts + 1;
+                if (next >= 8)
+                    db.update("UPDATE analysis_jobs SET status='FAILED', attempt_count=?, next_attempt_at=NULL WHERE id=? AND status='PROCESSING'", next, jobId);
+                else
+                    db.update("UPDATE analysis_jobs SET status='PENDING', attempt_count=?, next_attempt_at=? WHERE id=? AND status='PROCESSING'", next,
+                        Timestamp.from(Instant.now().plusSeconds(Math.min(300, 5L << (next - 1)))), jobId);
+                return true;
+            }
             if (!ReportEvidence.valid(result, selection)) throw new IllegalArgumentException("Invalid report evidence");
             ObjectNode report = json.createObjectNode();
             report.put("schemaVersion", "1");

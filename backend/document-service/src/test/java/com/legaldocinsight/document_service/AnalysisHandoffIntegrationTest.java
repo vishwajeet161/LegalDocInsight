@@ -4,6 +4,7 @@ import com.legaldocinsight.document_service.client.AnalysisServiceClient;
 import com.legaldocinsight.document_service.entity.Document;
 import com.legaldocinsight.document_service.repository.DocumentRepository;
 import com.legaldocinsight.document_service.service.impl.AnalysisHandoff;
+import com.legaldocinsight.document_service.service.impl.AnalysisHandoffDispatcher;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -32,10 +33,39 @@ class AnalysisHandoffIntegrationTest {
                 .thenReturn(ResponseEntity.status(503).build(), ResponseEntity.accepted().build());
             handoff.deliver(document.getId());
             assertEquals("PENDING", documents.findById(document.getId()).orElseThrow().getAnalysisDeliveryStatus());
+            var due = documents.findById(document.getId()).orElseThrow();
+            due.setAnalysisNextAttemptAt(java.time.Instant.now().minusSeconds(1));
+            documents.saveAndFlush(due);
             handoff.deliver(document.getId());
             assertEquals("DELIVERED", documents.findById(document.getId()).orElseThrow().getAnalysisDeliveryStatus());
             handoff.deliver(document.getId());
             verify(client, times(2)).submit(eq(document.getId()), anyString(), eq("synthetic text"));
+        } finally { documents.deleteById(document.getId()); }
+    }
+
+    @Test void transientFailureUsesPersistedRetryDelay() {
+        var document = documents.saveAndFlush(Document.builder().originalFileName("synthetic.pdf")
+            .storedFileName("synthetic.pdf").filePath("synthetic-path").fileSize(1L).fileType("application/pdf")
+            .status(Document.DocumentStatus.EXTRACTED).extractedText("synthetic text").analysisDeliveryStatus("PENDING").build());
+        try {
+            when(client.submit(eq(document.getId()), anyString(), eq("synthetic text"))).thenReturn(ResponseEntity.status(503).build());
+            handoff.deliver(document.getId());
+            var current = documents.findById(document.getId()).orElseThrow();
+            assertNotNull(current.getAnalysisNextAttemptAt());
+            assertTrue(current.getAnalysisNextAttemptAt().isAfter(java.time.Instant.now()));
+            handoff.deliver(document.getId());
+            verify(client, times(1)).submit(eq(document.getId()), anyString(), eq("synthetic text"));
+        } finally { documents.deleteById(document.getId()); }
+    }
+
+    @Test void dispatcherDeliversPersistedPendingWork() {
+        var document = documents.saveAndFlush(Document.builder().originalFileName("synthetic.pdf")
+            .storedFileName("synthetic.pdf").filePath("synthetic-path").fileSize(1L).fileType("application/pdf")
+            .status(Document.DocumentStatus.EXTRACTED).extractedText("synthetic text").analysisDeliveryStatus("PENDING").build());
+        try {
+            when(client.submit(eq(document.getId()), anyString(), eq("synthetic text"))).thenReturn(ResponseEntity.accepted().build());
+            new AnalysisHandoffDispatcher(documents, handoff, true).dispatch();
+            assertEquals("DELIVERED", documents.findById(document.getId()).orElseThrow().getAnalysisDeliveryStatus());
         } finally { documents.deleteById(document.getId()); }
     }
 }

@@ -52,6 +52,18 @@ class AnalysisControllerIntegrationTest {
             .andExpect(status().isNotFound());
     }
 
+    @Test void deletionRemovesResultsAndPermanentlyRejectsLateSubmissions() throws Exception {
+        String document = UUID.randomUUID().toString();
+        String body = request(document, "Synthetic contract");
+        String token = "synthetic-test-credential-32-bytes-long";
+        mvc.perform(post("/internal/analyses").header("X-Internal-Token", token).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isAccepted());
+        mvc.perform(delete("/internal/analyses/documents/{id}", document)).andExpect(status().isUnauthorized());
+        mvc.perform(delete("/internal/analyses/documents/{id}", document).header("X-Internal-Token", token)).andExpect(status().isNoContent());
+        mvc.perform(delete("/internal/analyses/documents/{id}", document).header("X-Internal-Token", token)).andExpect(status().isNoContent());
+        mvc.perform(post("/internal/analyses").header("X-Internal-Token", token).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isGone());
+        assertEquals(0, db.queryForObject("SELECT count(*) FROM analysis_jobs WHERE document_id=?", Integer.class, document));
+    }
+
     @Test void fakeAnalyzerPersistsCompleteReportAtomically() throws Exception {
         String document = UUID.randomUUID().toString();
         String response = mvc.perform(post("/internal/analyses").header("X-Internal-Token", "synthetic-test-credential-32-bytes-long")

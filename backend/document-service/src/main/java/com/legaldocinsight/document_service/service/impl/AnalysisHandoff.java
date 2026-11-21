@@ -5,6 +5,7 @@ import com.legaldocinsight.document_service.entity.Document.DocumentStatus;
 import com.legaldocinsight.document_service.repository.DocumentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.time.Instant;
 
 /** A single delivery attempt. Scheduling and retry pacing are separate. */
 @Service
@@ -20,9 +21,24 @@ public class AnalysisHandoff {
     public void deliver(String documentId) {
         var document = documents.findForDelivery(documentId).orElse(null);
         if (document == null || document.getStatus() != DocumentStatus.EXTRACTED
-                || !"PENDING".equals(document.getAnalysisDeliveryStatus())) return;
+                || !"PENDING".equals(document.getAnalysisDeliveryStatus())
+                || (document.getAnalysisNextAttemptAt() != null && document.getAnalysisNextAttemptAt().isAfter(Instant.now()))) return;
         var response = client.submit(documentId, "v1", document.getExtractedText());
-        if (response.getStatusCode().value() == 202) document.setAnalysisDeliveryStatus("DELIVERED");
-        else if (response.getStatusCode().value() == 400) document.setAnalysisDeliveryStatus("FAILED");
+        if (response.getStatusCode().value() == 202) {
+            document.setAnalysisDeliveryStatus("DELIVERED");
+            document.setAnalysisNextAttemptAt(null);
+        } else if (response.getStatusCode().value() == 400) {
+            document.setAnalysisDeliveryStatus("FAILED");
+            document.setAnalysisNextAttemptAt(null);
+        } else {
+            int attempts = document.getAnalysisDeliveryAttempts() == null ? 1 : document.getAnalysisDeliveryAttempts() + 1;
+            document.setAnalysisDeliveryAttempts(attempts);
+            if (attempts >= 8) {
+                document.setAnalysisDeliveryStatus("FAILED");
+                document.setAnalysisNextAttemptAt(null);
+            } else {
+                document.setAnalysisNextAttemptAt(Instant.now().plusSeconds(Math.min(300, 5L << (attempts - 1))));
+            }
+        }
     }
 }

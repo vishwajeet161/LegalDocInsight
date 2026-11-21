@@ -20,7 +20,7 @@ public final class AnalysisDispatcher {
 
     public synchronized void dispatch() {
         if (!ready) return;
-        var jobs = db.queryForList("SELECT id FROM analysis_jobs WHERE status='PENDING' ORDER BY created_at, id LIMIT 1", String.class);
+        var jobs = db.queryForList("SELECT id FROM analysis_jobs WHERE status='PENDING' AND (next_attempt_at IS NULL OR next_attempt_at<=CURRENT_TIMESTAMP) ORDER BY created_at, id LIMIT 1", String.class);
         if (!jobs.isEmpty()) worker.process(jobs.get(0));
     }
 }

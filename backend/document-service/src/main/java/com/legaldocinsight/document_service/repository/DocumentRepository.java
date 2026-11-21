@@ -14,6 +14,7 @@ import java.util.Collection;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.Lock;
 import jakarta.persistence.LockModeType;
+import java.time.Instant;
 
 @Repository
 public interface DocumentRepository extends JpaRepository<Document, String> {
@@ -25,6 +26,10 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select d from Document d where d.id = :id")
     Optional<Document> findForDelivery(@Param("id") String id);
+
+    @Query("select d.id from Document d where d.status = :status and d.analysisDeliveryStatus = 'PENDING' "
+        + "and (d.analysisNextAttemptAt is null or d.analysisNextAttemptAt <= :now) order by d.createdAt, d.id")
+    List<String> findDeliverable(@Param("status") DocumentStatus status, @Param("now") Instant now, Pageable limit);
 
     @Modifying
     @Query("update Document d set d.status = :processing where d.id = :id and d.status = :pending")

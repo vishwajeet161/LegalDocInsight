@@ -28,6 +28,35 @@ class DocumentReportAccessIntegrationTest {
     @MockitoBean ExtractionOrchestrator extraction;
     @MockitoBean AnalysisServiceClient analysis;
 
+    @Test void deletionRequiresAnalysisCleanupBeforeRemovingDocument() throws Exception {
+        var file = new MockMultipartFile("file", "synthetic.pdf", MediaType.APPLICATION_PDF_VALUE, "%PDF-1.4\n%%EOF".getBytes());
+        var upload = json.readTree(mvc.perform(multipart("/api/documents/upload").file(file)).andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString());
+        var id = upload.get("documentId").asText();
+        var token = upload.get("accessToken").asText();
+        var document = documents.findById(id).orElseThrow();
+        document.setAnalysisDeliveryStatus("PENDING");
+        documents.saveAndFlush(document);
+        mvc.perform(delete("/api/documents/{id}", id).header("X-Document-Token", "wrong")).andExpect(status().isForbidden());
+        verifyNoInteractions(analysis);
+        when(analysis.delete(id)).thenReturn(ResponseEntity.status(503).build(), ResponseEntity.noContent().build());
+        mvc.perform(delete("/api/documents/{id}", id).header("X-Document-Token", token)).andExpect(status().isServiceUnavailable());
+        org.junit.jupiter.api.Assertions.assertTrue(documents.existsById(id));
+        mvc.perform(delete("/api/documents/{id}", id).header("X-Document-Token", token)).andExpect(status().isNoContent());
+        org.junit.jupiter.api.Assertions.assertFalse(documents.existsById(id));
+    }
+
+    @Test void terminalHandoffFailureIsVisibleToTokenHolder() throws Exception {
+        var file = new MockMultipartFile("file", "synthetic.pdf", MediaType.APPLICATION_PDF_VALUE, "%PDF-1.4\n%%EOF".getBytes());
+        var upload = json.readTree(mvc.perform(multipart("/api/documents/upload").file(file)).andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString());
+        String id = upload.get("documentId").asText(), token = upload.get("accessToken").asText();
+        var document = documents.findById(id).orElseThrow();
+        document.setStatus(com.legaldocinsight.document_service.entity.Document.DocumentStatus.EXTRACTED);
+        document.setAnalysisDeliveryStatus("FAILED");
+        documents.saveAndFlush(document);
+        mvc.perform(get("/api/documents/{id}", id).header("X-Document-Token", token)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("FAILED")).andExpect(jsonPath("$.errorCode").value("ANALYSIS_HANDOFF_FAILED"));
+    }
+
     @Test void tokenIsCheckedBeforeFetchingReport() throws Exception {
         var file = new MockMultipartFile("file", "synthetic.pdf", MediaType.APPLICATION_PDF_VALUE, "%PDF-1.4\n%%EOF".getBytes());
         var upload = json.readTree(mvc.perform(multipart("/api/documents/upload").file(file)).andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString());

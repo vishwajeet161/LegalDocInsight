@@ -15,6 +15,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.legaldocinsight.document_service.client.AnalysisServiceClient;
+import com.legaldocinsight.document_service.exception.AnalysisCleanupUnavailableException;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.core.task.TaskRejectedException;
 import org.springframework.web.multipart.MultipartFile;
@@ -46,6 +49,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentRepository documentRepository;
     private final StorageService storageService;
     private final ExtractionOrchestrator extractionOrchestrator;  // separate bean for @Async
+    @Autowired private AnalysisServiceClient analysisClient;
     private final ReentrantLock admissionLock = new ReentrantLock();
 
     @Value("${document.extraction.max-admitted:50}")
@@ -185,7 +189,12 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     @Transactional
     public void deleteDocument(String documentId, String userId) {
-        Document document = findAndAuthorize(documentId, userId);
+        Document document = documentRepository.findForDelivery(documentId)
+            .orElseThrow(() -> new DocumentNotFoundException(documentId));
+        if (!tokenMatches(document, userId)) throw new DocumentAccessDeniedException(documentId);
+        if (document.getAnalysisDeliveryStatus() != null
+                && analysisClient.delete(documentId).getStatusCode().value() != 204)
+            throw new AnalysisCleanupUnavailableException();
         try {
             storageService.delete(document.getFilePath());
         } catch (Exception e) {
@@ -266,19 +275,20 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     private DocumentResponse mapToResponse(Document doc, boolean includeText) {
+        boolean handoffFailed = doc.getStatus() == DocumentStatus.EXTRACTED && "FAILED".equals(doc.getAnalysisDeliveryStatus());
         return DocumentResponse.builder()
             .id(doc.getId())
             .originalFileName(doc.getOriginalFileName())
             .fileSize(doc.getFileSize())
             .fileType(doc.getFileType())
-            .status(doc.getStatus() == null ? null
+            .status(handoffFailed ? "FAILED" : doc.getStatus() == null ? null
                 : doc.getStatus() == DocumentStatus.PROCESSING ? "EXTRACTING" : doc.getStatus().name())
             .pageCount(doc.getPageCount())
             .characterCount(doc.getCharacterCount())
             .extractedText(includeText ? doc.getExtractedText() : null)
             .uploadedBy(doc.getUploadedBy())
-            .errorMessage(doc.getStatus() == DocumentStatus.FAILED ? "Text extraction failed." : null)
-            .errorCode(doc.getStatus() == DocumentStatus.FAILED ? doc.getErrorCode() : null)
+            .errorMessage(handoffFailed ? "Analysis handoff failed." : doc.getStatus() == DocumentStatus.FAILED ? "Text extraction failed." : null)
+            .errorCode(handoffFailed ? "ANALYSIS_HANDOFF_FAILED" : doc.getStatus() == DocumentStatus.FAILED ? doc.getErrorCode() : null)
             .createdAt(doc.getCreatedAt())
             .updatedAt(doc.getUpdatedAt())
             .build();

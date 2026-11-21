@@ -19,6 +19,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header("Retry-After", "5").build();
     }
 
+    @ExceptionHandler(AnalysisCleanupUnavailableException.class)
+    public ResponseEntity<Void> handleAnalysisCleanupUnavailable(AnalysisCleanupUnavailableException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header("Retry-After", "5").build();
+    }
+
     @ExceptionHandler(DocumentNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleNotFound(DocumentNotFoundException ex) {
         return error(HttpStatus.NOT_FOUND, ex.getMessage());

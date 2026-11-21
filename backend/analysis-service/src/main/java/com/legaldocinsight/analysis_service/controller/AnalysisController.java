@@ -8,6 +8,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.*;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -25,14 +27,16 @@ public class AnalysisController {
     private final ObjectMapper json;
     private final byte[] credential;
     private final int capacity;
+    private final TransactionTemplate transactions;
 
     public AnalysisController(JdbcTemplate db, ObjectMapper json, @Value("${analysis.internal-token:}") String credential,
-                              @Value("${analysis.queue-capacity:50}") int capacity) {
+                              @Value("${analysis.queue-capacity:50}") int capacity, PlatformTransactionManager manager) {
         if (capacity < 1) throw new IllegalArgumentException("Invalid analysis queue capacity");
         this.db = db;
         this.json = json;
         this.credential = credential.getBytes(StandardCharsets.UTF_8);
         this.capacity = capacity;
+        this.transactions = new TransactionTemplate(manager);
     }
     public record Request(String documentId, String contentHash, String analysisVersion, String text) { }
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -48,6 +52,8 @@ public class AnalysisController {
         try {
             if (!UUID.fromString(request.documentId()).toString().equals(request.documentId())) return ResponseEntity.badRequest().build();
         } catch (IllegalArgumentException ex) { return ResponseEntity.badRequest().build(); }
+        if (db.queryForObject("SELECT count(*) FROM analysis_deleted_documents WHERE document_id=?", Integer.class, request.documentId()) > 0)
+            return ResponseEntity.status(HttpStatus.GONE).cacheControl(CacheControl.noStore()).build();
         byte[] bytes = request.text().getBytes(StandardCharsets.UTF_8);
         if (bytes.length == 0 || bytes.length > MAX_TEXT_BYTES || request.text().isBlank()
                 || !request.analysisVersion().matches("[A-Za-z0-9._-]{1,64}")
@@ -69,6 +75,20 @@ public class AnalysisController {
                     request.documentId(), request.contentHash(), request.analysisVersion());
         }
         return ResponseEntity.accepted().cacheControl(CacheControl.noStore()).body(Map.of("jobId", id));
+    }
+    @DeleteMapping("/documents/{documentId}")
+    public synchronized ResponseEntity<Void> delete(@RequestHeader(value="X-Internal-Token", required=false) String token, @PathVariable String documentId) {
+        if (!authorized(token)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        try {
+            if (!UUID.fromString(documentId).toString().equals(documentId)) return ResponseEntity.badRequest().build();
+        } catch (IllegalArgumentException ex) { return ResponseEntity.badRequest().build(); }
+        transactions.executeWithoutResult(status -> {
+            if (db.queryForObject("SELECT count(*) FROM analysis_deleted_documents WHERE document_id=?", Integer.class, documentId) == 0)
+                db.update("INSERT INTO analysis_deleted_documents(document_id, deleted_at) VALUES (?, ?)", documentId, Timestamp.from(Instant.now()));
+            db.update("DELETE FROM analysis_reports WHERE job_id IN (SELECT id FROM analysis_jobs WHERE document_id=?)", documentId);
+            db.update("DELETE FROM analysis_jobs WHERE document_id=?", documentId);
+        });
+        return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }
     @GetMapping("/documents/{documentId}/report")
     public ResponseEntity<?> report(@RequestHeader(value="X-Internal-Token", required=false) String token, @PathVariable String documentId) throws Exception {
