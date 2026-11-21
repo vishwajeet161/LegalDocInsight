@@ -19,6 +19,7 @@ import java.io.ByteArrayOutputStream;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Flow;
+import java.util.concurrent.TimeUnit;
 
 @Component
 public class AnalysisServiceClient {
@@ -40,7 +41,13 @@ public class AnalysisServiceClient {
             String id = UUID.fromString(documentId).toString();
             var request = HttpRequest.newBuilder(URI.create(baseUrl + "/internal/analyses/documents/" + id + "/report"))
                 .timeout(Duration.ofSeconds(5)).header("X-Internal-Token", token).GET().build();
-            var response = http.send(request, info -> new LimitedBody());
+            var pending = http.sendAsync(request, info -> new LimitedBody());
+            HttpResponse<byte[]> response;
+            try {
+                response = pending.get(5, TimeUnit.SECONDS);
+            } finally {
+                if (!pending.isDone()) pending.cancel(true);
+            }
                 if (response.statusCode() == 404) return ResponseEntity.notFound().build();
                 if (response.statusCode() == 202) return ResponseEntity.accepted().build();
                 if (response.statusCode() != 200) return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();

@@ -92,6 +92,20 @@ class AnalysisControllerIntegrationTest {
         } finally { executor.shutdownNow(); }
     }
 
+    @Test void processingFailedAndInconsistentJobsHaveSafeReportStates() throws Exception {
+        String document = UUID.randomUUID().toString();
+        String response = mvc.perform(post("/internal/analyses").header("X-Internal-Token", "synthetic-test-credential-32-bytes-long")
+            .contentType(MediaType.APPLICATION_JSON).content(request(document, "Synthetic contract")))
+            .andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString();
+        String job = json.readTree(response).get("jobId").asText();
+        mvc.perform(get("/internal/analyses/documents/{id}/report", document)).andExpect(status().isUnauthorized());
+        for (String state : java.util.List.of("PROCESSING", "FAILED", "COMPLETED")) {
+            db.update("UPDATE analysis_jobs SET status=? WHERE id=?", state, job);
+            mvc.perform(get("/internal/analyses/documents/{id}/report", document).header("X-Internal-Token", "synthetic-test-credential-32-bytes-long"))
+                .andExpect(state.equals("PROCESSING") ? status().isAccepted() : status().isServiceUnavailable());
+        }
+    }
+
     private String request(String id, String text) throws Exception {
         String hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8)));
         return json.writeValueAsString(Map.of("documentId", id, "contentHash", hash, "analysisVersion", "v1", "text", text));

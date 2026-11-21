@@ -64,15 +64,15 @@
 
 ## Feature 3 — Analysis API and report persistence
 
-**Status (2026-11-21):** In progress. The private API, database tables, transactional report store and token-gated document proxy have initial tests, including PostgreSQL duplicate submissions and database restart persistence. A full cross-service HTTP and service-restart verification remains open. See [Feature 3 specification](../../features/03-analysis-api-report-persistence.md). Feature 2's release blockers and disabled public profile remain unchanged.
+**Status (2026-11-21):** Complete for Feature 3 scope. Tests exercise gateway-to-document report access and the private analysis API against isolated PostgreSQL, including a test-only fake report, process restart, duplicate submission, safe upstream failures and bounded response time. The process test manually submits synthetic text; real model inference and reliable automatic handoff remain Feature 4. Feature 2 release blockers remain open and the public profile remains disabled. See [Feature 3 specification](../../features/03-analysis-api-report-persistence.md) for results and limits.
 
 **Files:** Replace analysis stub controller; create analysis request/result DTOs, `AnalysisJob` and `AnalysisReport` entities/repositories, migrations/config and `AnalysisControllerIntegrationTest.java`, `AnalysisRepositoryTest.java` under analysis-service `src/test/`. Add a token-protected report endpoint and internal analysis client to document-service, with `DocumentReportAccessIntegrationTest.java`.
 
 **Contract:** Internal `POST /internal/analyses` accepts document ID, content hash and bounded extracted text from an authenticated service caller; duplicate `(documentId, contentHash, analysisVersion)` requests return the existing job. Analysis-service exposes no public report endpoint. `GET /api/documents/{id}/report` first verifies the anonymous access token in document-service, then fetches the report internally; it returns `404` before creation and `202` while processing. Report schema includes summary, clauses, obligations, risks, evidence references, law observations, model ID and prompt version.
 
-- [ ] Write failing API/repository tests for creation, duplicate submission, internal caller rejection and token-protected report retrieval.
-- [ ] Implement storage/API using one PostgreSQL instance and analysis-owned tables; route public report access through document-service and make analysis endpoints internal only.
-- [ ] Run `./mvnw test` in analysis-service and gateway; verify the API contract with a fake analyzer.
+- [x] Cover creation, duplicate submission, internal caller rejection and token-protected report retrieval with API and repository tests.
+- [x] Implement storage/API using one PostgreSQL instance and analysis-owned tables; route public report access through document-service and make analysis endpoints internal only.
+- [x] Run `./mvnw test` in analysis-service and gateway; verify the API contract with a fake analyzer.
 
 **Exit:** Analysis jobs/reports persist; only a holder of the document access token can fetch the report through document-service. No real model call is required yet.
 
