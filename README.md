@@ -4,7 +4,7 @@ LegalDocInsight is a work-in-progress application for analyzing legal documents.
 
 ## Project status
 
-**The first release is in development, not yet implemented end to end.** The repository contains an Angular landing and upload interface, an API gateway, document upload and extraction code, and an in-progress private analysis API with job and report persistence. Feature 1 implemented the initial Java 21 build repairs, anonymous access tokens and gateway upload limits; no real model or automatic analysis handoff is implemented.
+**The first release is in development, not yet implemented end to end.** The repository contains an Angular landing and upload interface, an API gateway, document upload and extraction code, and a private analysis API with job and report persistence. Feature 1 implemented the initial Java 21 build repairs, anonymous access tokens and gateway upload limits; no real model or automatic analysis handoff is implemented.
 
 Anonymous access and rate limiting have initial implementations. Malware scanning and a parser subprocess with an experimental Linux resource boundary are implemented, but the complete first-release protections have not been verified. Do not deploy the current implementation as a public document-upload service.
 
@@ -63,7 +63,7 @@ The full set of controls remains in progress. The single-instance in-memory rate
 | --- | --- | --- |
 | 1 | Buildable baseline, anonymous upload and access control | Complete (user reports merged) |
 | 2 | Document validation, scanning, extraction and status | In progress |
-| 3 | Analysis API and report persistence | In progress; see [specification](docs/features/03-analysis-api-report-persistence.md) |
+| 3 | Analysis API and report persistence | Complete for Feature 3 scope; see [specification](docs/features/03-analysis-api-report-persistence.md) |
 | 4 | LLM analysis and reliable service handoff | Planned |
 | 5 | Curated Indian-law sources and report evaluation | Planned |
 | 6 | Angular status and report experience | Planned |

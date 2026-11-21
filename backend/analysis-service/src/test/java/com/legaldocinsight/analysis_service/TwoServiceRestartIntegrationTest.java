@@ -51,28 +51,34 @@ class TwoServiceRestartIntegrationTest {
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
     private Process analysis;
     private Process document;
+    private Process gateway;
 
     @Test void reportSurvivesAnalysisProcessRestartAndRequiresDocumentToken() throws Exception {
         String url = System.getenv("TEST_ANALYSIS_DB_URL");
         assertTrue(url.matches("jdbc:postgresql://[^/]+/feature3(?:\\?.*)?"), "dedicated feature3 database required");
-        int analysisPort = port(), documentPort = port();
+        int analysisPort = port(), documentPort = port(), gatewayPort = port();
         String analysisUrl = "http://127.0.0.1:" + analysisPort;
         String documentUrl = "http://127.0.0.1:" + documentPort;
+        String gatewayUrl = "http://127.0.0.1:" + gatewayPort;
         String id = null;
         try {
             analysis = startAnalysis(analysisPort, "analysis-first.log");
             document = startDocument(documentPort, analysisUrl);
+            gateway = startGateway(gatewayPort, documentUrl);
             await(analysisUrl + "/internal/analyses/documents/00000000-0000-0000-0000-000000000000/report", 401);
             await(documentUrl + "/api/documents/00000000-0000-0000-0000-000000000000/report", 404);
+            await(gatewayUrl + "/actuator/health", 200);
+            int publicAnalysisStatus = get(gatewayUrl + "/api/analysis/reports/example", null).statusCode();
+            assertTrue(publicAnalysisStatus >= 400 && publicAnalysisStatus < 500);
             String boundary = "synthetic-boundary";
             String multipart = "--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"synthetic.pdf\"\r\nContent-Type: application/pdf\r\n\r\n%PDF-1.4\n%%EOF\r\n--" + boundary + "--\r\n";
-            var upload = send(HttpRequest.newBuilder(URI.create(documentUrl + "/api/documents/upload"))
+            var upload = send(HttpRequest.newBuilder(URI.create(gatewayUrl + "/api/documents/upload"))
                 .header("Content-Type", "multipart/form-data; boundary=" + boundary).POST(HttpRequest.BodyPublishers.ofString(multipart)).build());
             assertEquals(202, upload.statusCode(), upload.body());
             var receipt = json.readTree(upload.body());
             id = receipt.path("documentId").asText();
             String token = receipt.path("accessToken").asText();
-            String reportUrl = documentUrl + "/api/documents/" + id + "/report";
+            String reportUrl = gatewayUrl + "/api/documents/" + id + "/report";
             assertEquals(403, get(reportUrl, null).statusCode());
             assertEquals(403, get(reportUrl, "wrong").statusCode());
             assertEquals(404, get(reportUrl, token).statusCode());
@@ -100,8 +106,14 @@ class TwoServiceRestartIntegrationTest {
             assertEquals(200, after.statusCode());
             assertEquals(json.readTree(result.body()), json.readTree(after.body()));
             assertEquals(1, db.queryForObject("select count(*) from analysis_jobs where document_id=?", Integer.class, id));
+            for (String log : java.util.List.of("gateway.log", "document.log", "analysis-first.log", "analysis-second.log", "logs/api-gateway.log", "logs/document-service.log")) {
+                String contents = java.nio.file.Files.readString(temp.resolve(log));
+                assertFalse(contents.contains(token), "document token appeared in " + log);
+                assertFalse(contents.contains(SECRET), "internal credential appeared in " + log);
+                assertFalse(contents.contains(text), "synthetic text appeared in " + log);
+            }
         } finally {
-            stop(document); stop(analysis);
+            stop(gateway); stop(document); stop(analysis);
             if (id != null) {
                 db.update("delete from analysis_reports where job_id in (select id from analysis_jobs where document_id=?)", id);
                 db.update("delete from analysis_jobs where document_id=?", id);
@@ -120,6 +132,13 @@ class TwoServiceRestartIntegrationTest {
             "--analysis.service-url=" + analysisUrl, "--analysis.internal-token=" + SECRET)
             .directory(temp.toFile()).redirectErrorStream(true).redirectOutput(temp.resolve("document.log").toFile());
         p.environment().put("SPRING_DATASOURCE_PASSWORD", System.getenv("TEST_ANALYSIS_DB_PASSWORD"));
+        return p.start();
+    }
+    private Process startGateway(int port, String documentUrl) throws Exception {
+        var p = new ProcessBuilder(java(), "-jar", Path.of("../api-gateway/target/api-gateway-1.0.0-SNAPSHOT.jar").toAbsolutePath().toString(),
+            "--server.port=" + port).directory(temp.toFile()).redirectErrorStream(true)
+            .redirectOutput(temp.resolve("gateway.log").toFile());
+        p.environment().put("DOCUMENT_SERVICE_URL", documentUrl);
         return p.start();
     }
     private HttpResponse<String> submission(String base, String body) throws Exception {
