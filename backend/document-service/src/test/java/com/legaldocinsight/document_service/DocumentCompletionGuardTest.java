@@ -22,19 +22,19 @@ class DocumentCompletionGuardTest {
             .filePath("synthetic-path").fileSize(1L).fileType("application/pdf")
             .status(DocumentStatus.PENDING).build());
         assertEquals(0, documents.finishIfProcessing(document.getId(), DocumentStatus.PROCESSING,
-            DocumentStatus.EXTRACTED, "synthetic text", 1, 14, null, null));
+            DocumentStatus.EXTRACTED, "synthetic text", 1, 14, null, null, "PENDING"));
         entityManager.clear();
         var current = documents.findById(document.getId()).orElseThrow();
         assertEquals(DocumentStatus.PENDING, current.getStatus());
         current.setStatus(DocumentStatus.PROCESSING);
         documents.saveAndFlush(current);
         assertEquals(1, documents.finishIfProcessing(document.getId(), DocumentStatus.PROCESSING,
-            DocumentStatus.EXTRACTED, "synthetic text", 1, 14, null, null));
+            DocumentStatus.EXTRACTED, "synthetic text", 1, 14, null, null, "PENDING"));
         assertEquals(DocumentStatus.EXTRACTED, documents.findById(document.getId()).orElseThrow().getStatus());
         documents.deleteById(document.getId());
         documents.flush();
         assertEquals(0, documents.finishIfProcessing(document.getId(), DocumentStatus.PROCESSING,
-            DocumentStatus.EXTRACTED, "synthetic text", 1, 14, null, null));
+            DocumentStatus.EXTRACTED, "synthetic text", 1, 14, null, null, "PENDING"));
         assertEquals(false, documents.existsById(document.getId()));
     }
 }

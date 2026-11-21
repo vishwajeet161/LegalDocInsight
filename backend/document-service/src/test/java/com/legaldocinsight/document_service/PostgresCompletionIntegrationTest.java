@@ -119,6 +119,6 @@ class PostgresCompletionIntegrationTest {
 
     private int finish(String id) {
         return documents.finishIfProcessing(id, DocumentStatus.PROCESSING,
-            DocumentStatus.EXTRACTED, "synthetic text", 1, 14, null, null);
+            DocumentStatus.EXTRACTED, "synthetic text", 1, 14, null, null, "PENDING");
     }
 }

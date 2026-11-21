@@ -24,11 +24,15 @@ public class AnalysisController {
     private final JdbcTemplate db;
     private final ObjectMapper json;
     private final byte[] credential;
+    private final int capacity;
 
-    public AnalysisController(JdbcTemplate db, ObjectMapper json, @Value("${analysis.internal-token:}") String credential) {
+    public AnalysisController(JdbcTemplate db, ObjectMapper json, @Value("${analysis.internal-token:}") String credential,
+                              @Value("${analysis.queue-capacity:50}") int capacity) {
+        if (capacity < 1) throw new IllegalArgumentException("Invalid analysis queue capacity");
         this.db = db;
         this.json = json;
         this.credential = credential.getBytes(StandardCharsets.UTF_8);
+        this.capacity = capacity;
     }
     public record Request(String documentId, String contentHash, String analysisVersion, String text) { }
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -37,7 +41,7 @@ public class AnalysisController {
         return credential.length >= 32 && supplied != null && MessageDigest.isEqual(credential, supplied.getBytes(StandardCharsets.UTF_8));
     }
     @PostMapping
-    public ResponseEntity<?> submit(@RequestHeader(value="X-Internal-Token", required=false) String token, @RequestBody Request request) throws Exception {
+    public synchronized ResponseEntity<?> submit(@RequestHeader(value="X-Internal-Token", required=false) String token, @RequestBody Request request) throws Exception {
         if (!authorized(token)) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         if (request.documentId() == null || request.contentHash() == null || request.analysisVersion() == null || request.text() == null)
             return ResponseEntity.badRequest().build();
@@ -50,6 +54,12 @@ public class AnalysisController {
                 || !request.contentHash().matches("[0-9a-f]{64}")
                 || !request.contentHash().equals(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))))
             return ResponseEntity.badRequest().build();
+        var existing = db.queryForList("SELECT id FROM analysis_jobs WHERE document_id=? AND content_hash=? AND analysis_version=?", String.class,
+                request.documentId(), request.contentHash(), request.analysisVersion());
+        if (!existing.isEmpty()) return ResponseEntity.accepted().cacheControl(CacheControl.noStore()).body(Map.of("jobId", existing.get(0)));
+        Long queued = db.queryForObject("SELECT count(*) FROM analysis_jobs WHERE status IN ('PENDING','PROCESSING')", Long.class);
+        if (queued == null || queued >= capacity)
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header("Retry-After", "5").cacheControl(CacheControl.noStore()).build();
         String id = UUID.randomUUID().toString();
         try {
             db.update("INSERT INTO analysis_jobs (id, document_id, content_hash, analysis_version, extracted_text, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",

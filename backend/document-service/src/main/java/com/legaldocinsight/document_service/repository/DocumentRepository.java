@@ -11,6 +11,9 @@ import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.Collection;
+import java.util.Optional;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 
 @Repository
 public interface DocumentRepository extends JpaRepository<Document, String> {
@@ -18,6 +21,10 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
     List<Document> findByStatus(DocumentStatus status);
     long countByStatusIn(Collection<DocumentStatus> statuses);
     List<Document> findByStatusOrderByCreatedAtAsc(DocumentStatus status, Pageable pageable);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select d from Document d where d.id = :id")
+    Optional<Document> findForDelivery(@Param("id") String id);
 
     @Modifying
     @Query("update Document d set d.status = :processing where d.id = :id and d.status = :pending")
@@ -31,11 +38,11 @@ public interface DocumentRepository extends JpaRepository<Document, String> {
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("update Document d set d.status = :terminal, d.extractedText = :text, "
-        + "d.pageCount = :pages, d.characterCount = :characters, d.errorCode = :code, "
+        + "d.pageCount = :pages, d.characterCount = :characters, d.analysisDeliveryStatus = :delivery, d.errorCode = :code, "
         + "d.errorMessage = :message, d.updatedAt = CURRENT_TIMESTAMP "
         + "where d.id = :id and d.status = :processing")
     int finishIfProcessing(@Param("id") String id, @Param("processing") DocumentStatus processing,
         @Param("terminal") DocumentStatus terminal, @Param("text") String text,
         @Param("pages") Integer pages, @Param("characters") Integer characters,
-        @Param("code") String code, @Param("message") String message);
+        @Param("code") String code, @Param("message") String message, @Param("delivery") String delivery);
 }
