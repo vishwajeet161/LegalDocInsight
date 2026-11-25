@@ -78,7 +78,7 @@
 
 ## Feature 4 — LLM analysis and reliable handoff
 
-**Status (2026-11-21):** In progress. Opt-in handoff and worker, persisted retry delays and initial deletion protections are implemented. A synthetic DOCX was exercised through gateway, extraction, PostgreSQL, HTTP handoff and a controlled model endpoint, including analysis-process interruption and restart. The provider and model are undecided; a real-model run, additional recovery/deletion coverage and release safety work remain open. See the [Feature 4 specification](../../features/04-llm-analysis-reliable-handoff.md).
+**Status (2026-11-25):** In progress. Opt-in handoff and worker, persisted retry delays and initial deletion protections are implemented. A synthetic DOCX was exercised through gateway, extraction, PostgreSQL, HTTP handoff and a controlled model endpoint, including analysis-process interruption and restart. Ollama Cloud `gpt-oss:120b-cloud` is the initial model selection; its authentication and request format have controlled HTTP tests, but no real-model call has been exercised. Additional recovery/deletion coverage and release safety work remain open. See the [Feature 4 specification](../../features/04-llm-analysis-reliable-handoff.md).
 
 **Files:** Create an analysis-service model-client interface and Ollama-compatible HTTP implementation, prompt/schema validator, chunk/coverage selector, worker and tests such as `ModelClientTest.java`, `ReportValidationTest.java`, `AnalysisWorkerIntegrationTest.java`. Modify document-service orchestration/client and add `AnalysisHandoffIntegrationTest.java`. Add config values for model URL/name/timeouts and prompt version.
 

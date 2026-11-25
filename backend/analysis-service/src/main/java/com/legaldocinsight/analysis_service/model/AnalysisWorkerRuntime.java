@@ -23,9 +23,11 @@ public class AnalysisWorkerRuntime {
     public AnalysisWorkerRuntime(JdbcTemplate db, AnalysisReportStore reports, ObjectMapper json,
             @Value("${analysis.model.url:http://localhost:11434}") String url,
             @Value("${analysis.model.name:}") String name,
+            @Value("${analysis.model.cloud:false}") boolean cloud,
+            @Value("${analysis.model.api-key:}") String apiKey,
             @Value("${analysis.model.timeout:PT2M}") Duration timeout,
             @Value("${analysis.model.prompt-version:v1}") String promptVersion) {
-        var client = new OllamaClient(URI.create(url), name, timeout, json);
+        var client = new OllamaClient(URI.create(url), name, timeout, json, cloud, apiKey);
         dispatcher = new AnalysisDispatcher(db, new AnalysisWorker(db, reports, json, client::generate, name, promptVersion, 12000, 6));
     }
 

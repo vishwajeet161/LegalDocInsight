@@ -4,7 +4,7 @@ LegalDocInsight is a work-in-progress application for analyzing legal documents.
 
 ## Project status
 
-**The first release is in development, not yet implemented end to end.** The repository contains an Angular landing and upload interface, an API gateway, document upload and extraction code, and a private analysis API with job and report persistence. Feature 1 implemented the initial Java 21 build repairs, anonymous access tokens and gateway upload limits. Feature 4 adds an opt-in automatic handoff and worker tested with controlled services; no real model API has been selected or verified.
+**The first release is in development, not yet implemented end to end.** The repository contains an Angular landing and upload interface, an API gateway, document upload and extraction code, and a private analysis API with job and report persistence. Feature 1 implemented the initial Java 21 build repairs, anonymous access tokens and gateway upload limits. Feature 4 adds an opt-in automatic handoff and worker tested with controlled services. Ollama Cloud `gpt-oss:120b-cloud` is the initial model selection, but a real model call has not been verified.
 
 Anonymous access and rate limiting have initial implementations. Malware scanning and a parser subprocess with an experimental Linux resource boundary are implemented, but the complete first-release protections have not been verified. Do not deploy the current implementation as a public document-upload service.
 
@@ -45,7 +45,7 @@ Frontend polls document-service for status and the report.
 
 The gateway, document service and analysis service remain separate Spring Boot applications for the first release. The planned handoff from document service to analysis service uses internal HTTP. One PostgreSQL instance and a persistent local file volume support the initial single-host deployment. The development stack includes a private malware scanner; a model runtime is planned.
 
-Ollama serving Qwen3:8b is an initial model candidate; its hardware requirements and report quality must be measured before selection. The model endpoint and name are intended to be configurable.
+Ollama Cloud `gpt-oss:120b-cloud` is the initial model candidate; its response quality and performance must be measured. The model endpoint and name are configurable. See the [Feature 4 specification](docs/features/04-llm-analysis-reliable-handoff.md) for cloud configuration and current limits.
 
 ## Planned privacy and upload controls
 

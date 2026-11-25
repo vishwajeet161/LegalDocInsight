@@ -10,6 +10,33 @@ import java.time.Duration;
 import static org.junit.jupiter.api.Assertions.*;
 
 class OllamaClientTest {
+    @Test void cloudRequestSendsBearerTokenWithoutStructuredOutputParameter() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        var json = new ObjectMapper();
+        var seen = new java.util.concurrent.CompletableFuture<Boolean>();
+        server.createContext("/api/generate", exchange -> {
+            var request = json.readTree(exchange.getRequestBody());
+            seen.complete("Bearer synthetic-key".equals(exchange.getRequestHeaders().getFirst("Authorization"))
+                    && !request.has("format") && "gpt-oss:120b-cloud".equals(request.path("model").asText()));
+            byte[] response = "{\"response\":\"{\\\"result\\\":true}\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            var client = new OllamaClient(URI.create("http://127.0.0.1:" + server.getAddress().getPort()),
+                    "gpt-oss:120b-cloud", Duration.ofSeconds(2), json, true, "synthetic-key");
+            assertTrue(client.generate("synthetic prompt").path("result").asBoolean());
+            assertTrue(seen.get());
+        } finally { server.stop(0); }
+    }
+
+    @Test void cloudRejectsMissingKeyAndNonlocalPlaintextEndpoint() {
+        var json = new ObjectMapper();
+        assertThrows(IllegalArgumentException.class, () -> new OllamaClient(URI.create("https://ollama.com"), "model", Duration.ofSeconds(1), json, true, ""));
+        assertThrows(IllegalArgumentException.class, () -> new OllamaClient(URI.create("http://example.com"), "model", Duration.ofSeconds(1), json, true, "synthetic-key"));
+    }
     @Test void timesOutWhenResponseBodyStallsAfterHeaders() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/generate", exchange -> {

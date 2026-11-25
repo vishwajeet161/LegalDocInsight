@@ -23,24 +23,39 @@ public final class OllamaClient {
     private final String model;
     private final Duration timeout;
     private final ObjectMapper json;
+    private final boolean cloud;
+    private final String apiKey;
 
     public OllamaClient(URI base, String model, Duration timeout, ObjectMapper json) {
+        this(base, model, timeout, json, false, "");
+    }
+
+    public OllamaClient(URI base, String model, Duration timeout, ObjectMapper json, boolean cloud, String apiKey) {
         if (base == null || !("http".equals(base.getScheme()) || "https".equals(base.getScheme()))
                 || base.getHost() == null || base.getUserInfo() != null || base.getQuery() != null
                 || base.getFragment() != null || model == null || model.isBlank()
                 || timeout == null || timeout.isZero() || timeout.isNegative())
             throw new IllegalArgumentException("Invalid model configuration");
+        if (cloud && (apiKey == null || apiKey.isBlank() || !apiKey.equals(apiKey.trim())
+                || apiKey.chars().anyMatch(Character::isISOControl)
+                || !("https".equals(base.getScheme()) || "127.0.0.1".equals(base.getHost()) || "::1".equals(base.getHost()))))
+            throw new IllegalArgumentException("Invalid cloud model configuration");
         this.endpoint = URI.create(base.toString().replaceAll("/+$", "") + "/api/generate");
         this.model = model;
         this.timeout = timeout;
         this.json = json;
+        this.cloud = cloud;
+        this.apiKey = apiKey;
         this.http = HttpClient.newBuilder().connectTimeout(timeout).followRedirects(HttpClient.Redirect.NEVER).build();
     }
 
     public JsonNode generate(String prompt) throws Exception {
-        String body = json.writeValueAsString(Map.of("model", model, "prompt", prompt, "stream", false, "format", "json"));
-        HttpRequest request = HttpRequest.newBuilder(endpoint).timeout(timeout).header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body)).build();
+        String body = json.writeValueAsString(cloud
+                ? Map.of("model", model, "prompt", prompt, "stream", false)
+                : Map.of("model", model, "prompt", prompt, "stream", false, "format", "json"));
+        var builder = HttpRequest.newBuilder(endpoint).timeout(timeout).header("Content-Type", "application/json");
+        if (cloud) builder.header("Authorization", "Bearer " + apiKey);
+        HttpRequest request = builder.POST(HttpRequest.BodyPublishers.ofString(body)).build();
         var pending = http.sendAsync(request, info -> new LimitedBody());
         try {
             var response = pending.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
