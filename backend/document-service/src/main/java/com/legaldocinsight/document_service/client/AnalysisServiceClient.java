@@ -35,6 +35,53 @@ public class AnalysisServiceClient {
         this.token = token;
     }
 
+    public ResponseEntity<Void> submit(String documentId, String version, String text) {
+        if (token.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 32) return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        try {
+            String id = UUID.fromString(documentId).toString();
+            byte[] bytes = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            String hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+            String payload = json.writeValueAsString(java.util.Map.of("documentId", id, "analysisVersion", version, "contentHash", hash, "text", text));
+            var request = HttpRequest.newBuilder(URI.create(baseUrl + "/internal/analyses"))
+                .timeout(Duration.ofSeconds(5)).header("X-Internal-Token", token).header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(payload)).build();
+            var pending = http.sendAsync(request, info -> new LimitedBody());
+            try {
+                var response = pending.get(5, TimeUnit.SECONDS);
+                if (response.statusCode() == 400 || response.statusCode() == 413) return ResponseEntity.badRequest().build();
+                if (response.statusCode() != 202) return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+                var result = json.readTree(response.body());
+                if (result == null || !result.path("jobId").isTextual()) return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+                UUID.fromString(result.path("jobId").asText());
+                return ResponseEntity.accepted().build();
+            } finally { if (!pending.isDone()) pending.cancel(true); }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
+    }
+
+    public ResponseEntity<Void> delete(String documentId) {
+        if (token.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 32) return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        try {
+            String id = UUID.fromString(documentId).toString();
+            var request = HttpRequest.newBuilder(URI.create(baseUrl + "/internal/analyses/documents/" + id))
+                .timeout(Duration.ofSeconds(5)).header("X-Internal-Token", token).DELETE().build();
+            var pending = http.sendAsync(request, info -> new LimitedBody());
+            try {
+                return pending.get(5, TimeUnit.SECONDS).statusCode() == 204
+                    ? ResponseEntity.noContent().build() : ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+            } finally { if (!pending.isDone()) pending.cancel(true); }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
+    }
+
     public ResponseEntity<JsonNode> report(String documentId) {
         if (token.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 32) return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         try {

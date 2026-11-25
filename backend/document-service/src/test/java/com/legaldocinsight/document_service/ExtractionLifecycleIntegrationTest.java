@@ -76,6 +76,7 @@ class ExtractionLifecycleIntegrationTest {
             orchestrator.extractAsync(document.getId());
             await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
                 assertEquals(DocumentStatus.EXTRACTED, documents.findById(document.getId()).orElseThrow().getStatus()));
+            assertEquals("PENDING", documents.findById(document.getId()).orElseThrow().getAnalysisDeliveryStatus());
             assertArrayEquals("synthetic input".getBytes(java.nio.charset.StandardCharsets.UTF_8), scanned.get());
             assertArrayEquals(scanned.get(), parsed.get());
         } finally {
